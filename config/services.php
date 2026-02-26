@@ -35,4 +35,25 @@ return [
         ],
     ],
 
+    'paystack' => [
+        'public_key' => env('PAYSTACK_PUBLIC_KEY'),
+        'secret_key' => env('PAYSTACK_SECRET_KEY'),
+    ],
+
+    'sms' => [
+        'driver' => env('SMS_DRIVER', 'log'), // log, africastalking, hubtel
+    ],
+
+    'africastalking' => [
+        'username' => env('AT_USERNAME'),
+        'api_key' => env('AT_API_KEY'),
+        'sender_id' => env('AT_SENDER_ID', 'CediBites'),
+    ],
+
+    'hubtel' => [
+        'client_id' => env('HUBTEL_CLIENT_ID'),
+        'client_secret' => env('HUBTEL_CLIENT_SECRET'),
+        'sender_id' => env('HUBTEL_SENDER_ID', 'CediBites'),
+    ],
+
 ];
