@@ -17,11 +17,14 @@ class EmployeeOrderController extends Controller
     ) {}
 
     /**
-     * Get orders for employee's branch.
+     * Get orders for employee's branch (or filtered for super_admin).
      */
     public function index(Request $request): JsonResponse
     {
-        $filters = $request->only(['status', 'order_type', 'date_from', 'date_to']);
+        $filters = $request->only([
+            'branch_id', 'branch_name', 'staff_id', 'status', 'order_type', 'order_source',
+            'contact_phone', 'date_from', 'date_to', 'search',
+        ]);
 
         $orders = $this->orderManagementService
             ->getBranchOrders($request->user(), $filters)
@@ -66,18 +69,19 @@ class EmployeeOrderController extends Controller
         // Check if order belongs to employee's branch
         $employee = $request->user()->employee;
 
-        if (! $employee || $order->branch_id !== $employee->branch_id) {
+        if (! $employee || ! $employee->branches()->where('branches.id', $order->branch_id)->exists()) {
             return response()->error('You can only update orders from your branch.', 403);
         }
 
         $updatedOrder = $this->orderManagementService->updateOrderStatus(
             $order,
             $request->status,
-            $request->notes
+            $request->notes,
+            $request->user()
         );
 
         return response()->success(
-            new OrderResource($updatedOrder->load(['customer.user', 'orderItems.menuItemSize.menuItem', 'payment'])),
+            new OrderResource($updatedOrder->load(['customer.user', 'items.menuItemSize.menuItem', 'payments'])),
             'Order status updated successfully.'
         );
     }

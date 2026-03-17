@@ -22,7 +22,7 @@ class AppServiceProvider extends ServiceProvider
         // Register custom SMS notification channel
         \Illuminate\Support\Facades\Notification::resolved(function ($service) {
             $service->extend('sms', function ($app) {
-                return new \App\Channels\SmsChannel($app->make(\App\Services\SMSService::class));
+                return new \App\Channels\SmsChannel($app->make(\App\Services\HubtelSmsService::class));
             });
         });
 
@@ -32,13 +32,17 @@ class AppServiceProvider extends ServiceProvider
         // Register Payment observer
         \App\Models\Payment::observe(\App\Observers\PaymentObserver::class);
 
-        // Register rate limiters
+        // Register rate limiters (relaxed in local for testing)
         \Illuminate\Support\Facades\RateLimiter::for('otp-send', function ($request) {
-            return \Illuminate\Cache\RateLimiting\Limit::perHour(3)->by($request->input('phone_number') ?? $request->ip());
+            $limit = app()->environment('local') ? 60 : 3;
+
+            return \Illuminate\Cache\RateLimiting\Limit::perHour($limit)->by($request->input('phone') ?? $request->ip());
         });
 
         \Illuminate\Support\Facades\RateLimiter::for('otp-verify', function ($request) {
-            return \Illuminate\Cache\RateLimiting\Limit::perMinutes(5, 5)->by($request->input('phone_number') ?? $request->ip());
+            $limit = app()->environment('local') ? 30 : 5;
+
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute($limit)->by($request->input('phone') ?? $request->ip());
         });
     }
 }

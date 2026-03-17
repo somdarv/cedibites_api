@@ -6,10 +6,24 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Order extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
+
+    protected static $recordEvents = ['updated'];
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('orders')
+            ->logOnly(['status', 'cancelled_at', 'cancelled_reason'])
+            ->logOnlyDirty()
+            ->dontLogIfAttributesChangedOnly(['updated_at'])
+            ->dontSubmitEmptyLogs();
+    }
 
     protected $fillable = [
         'order_number',

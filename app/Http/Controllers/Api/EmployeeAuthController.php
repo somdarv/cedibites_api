@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Enums\EmployeeStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\EmployeeLoginRequest;
+use App\Http\Requests\PosLoginRequest;
 use App\Http\Resources\EmployeeAuthResource;
+use App\Models\Employee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -14,14 +16,29 @@ use Illuminate\Support\Facades\Auth;
 class EmployeeAuthController extends Controller
 {
     /**
-     * Employee login with email and password.
+     * Employee login with identifier (email or phone) and password.
      */
     public function login(EmployeeLoginRequest $request): JsonResponse|Response
     {
-        $credentials = $request->validated();
+        $identifier = trim($request->identifier);
+        $password = $request->password;
 
-        if (! Auth::attempt($credentials)) {
-            return response()->unauthorized();
+        $field = str_contains($identifier, '@') ? 'email' : 'phone';
+        $value = $identifier;
+
+        if ($field === 'phone') {
+            $digits = preg_replace('/\D/', '', $identifier);
+            $value = str_starts_with($digits, '233') ? $digits : '233'.ltrim($digits, '0');
+        }
+
+        if (! Auth::attempt([$field => $value, 'password' => $password])) {
+            if ($field === 'phone' && $value !== $identifier) {
+                if (! Auth::attempt(['phone' => $identifier, 'password' => $password])) {
+                    return response()->unauthorized();
+                }
+            } else {
+                return response()->unauthorized();
+            }
         }
 
         $user = Auth::user();
@@ -40,9 +57,57 @@ class EmployeeAuthController extends Controller
 
         $token = $user->createToken('employee-auth-token')->plainTextToken;
 
+        activity('auth')
+            ->causedBy($user)
+            ->event('staff_login')
+            ->log("Staff login: {$user->name} (".$user->employee->branches->pluck('name')->join(', ').')');
+
         return response()->success([
             'token' => $token,
-            'user' => new EmployeeAuthResource($user->load(['employee.branch', 'roles', 'permissions'])),
+            'user' => new EmployeeAuthResource($user->load(['employee.branches', 'roles', 'permissions'])),
+        ]);
+    }
+
+    /**
+     * POS login with 4-digit PIN.
+     */
+    public function posLogin(PosLoginRequest $request): JsonResponse
+    {
+        $employee = Employee::query()
+            ->where('pos_pin', $request->pin)
+            ->with(['user', 'branches'])
+            ->first();
+
+        if (! $employee || $employee->status !== EmployeeStatus::Active) {
+            return response()->forbidden('Invalid PIN or inactive account');
+        }
+
+        $user = $employee->user;
+        $token = $user->createToken('pos-auth-token')->plainTextToken;
+
+        $roles = $user->getRoleNames();
+        $role = $roles->first() ?? 'employee';
+
+        $firstBranch = $employee->branches->first();
+        $staffUser = [
+            'id' => (string) $employee->id,
+            'name' => $user->name,
+            'role' => $role,
+            'branch' => $firstBranch?->name ?? '',
+            'branchId' => (string) ($firstBranch?->id ?? ''),
+            'branchIds' => $employee->branches->pluck('id')->values()->all(),
+        ];
+
+        activity('auth')
+            ->causedBy($user)
+            ->performedOn($employee)
+            ->event('pos_login')
+            ->withProperties(['branch' => $firstBranch?->name])
+            ->log("POS login: {$user->name} at ".($firstBranch?->name ?? 'N/A'));
+
+        return response()->success([
+            'token' => $token,
+            'user' => $staffUser,
         ]);
     }
 
@@ -51,6 +116,11 @@ class EmployeeAuthController extends Controller
      */
     public function logout(Request $request): Response
     {
+        activity('auth')
+            ->causedBy($request->user())
+            ->event('staff_logout')
+            ->log('Staff logout');
+
         $request->user()->tokens()->delete();
 
         return response()->deleted();

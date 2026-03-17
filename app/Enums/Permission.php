@@ -29,4 +29,10 @@ enum Permission: string
     // Employee permissions
     case ViewEmployees = 'view_employees';
     case ManageEmployees = 'manage_employees';
+
+    // Analytics permissions
+    case ViewAnalytics = 'view_analytics';
+
+    // Audit
+    case ViewActivityLog = 'view_activity_log';
 }

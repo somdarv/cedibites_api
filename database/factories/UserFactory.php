@@ -29,6 +29,7 @@ class UserFactory extends Factory
             'phone' => '+233'.fake()->numerify('#########'),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'must_reset_password' => false,
             'remember_token' => Str::random(10),
         ];
     }

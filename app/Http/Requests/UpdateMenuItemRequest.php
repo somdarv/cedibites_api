@@ -21,11 +21,18 @@ class UpdateMenuItemRequest extends FormRequest
      */
     public function rules(): array
     {
+        $menuItemId = $this->route('menuItem')?->id;
+
         return [
             'branch_id' => ['sometimes', 'exists:branches,id'],
             'category_id' => ['nullable', 'exists:menu_categories,id'],
             'name' => ['sometimes', 'string', 'max:255'],
-            'slug' => ['sometimes', 'string', 'max:255'],
+            'slug' => [
+                'sometimes',
+                'string',
+                'max:255',
+                'unique:menu_items,slug,'.$menuItemId.',id,branch_id,'.$this->input('branch_id'),
+            ],
             'description' => ['nullable', 'string'],
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'is_available' => ['boolean'],
@@ -43,6 +50,7 @@ class UpdateMenuItemRequest extends FormRequest
         return [
             'branch_id.exists' => 'Selected branch does not exist',
             'category_id.exists' => 'Selected category does not exist',
+            'slug.unique' => 'A menu item with this name already exists in this branch',
             'base_price.numeric' => 'Base price must be a number',
             'base_price.min' => 'Base price cannot be negative',
         ];

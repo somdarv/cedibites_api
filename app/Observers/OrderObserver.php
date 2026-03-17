@@ -59,7 +59,7 @@ class OrderObserver
      */
     protected function notifyBranchEmployees(Order $order): void
     {
-        $employees = Employee::where('branch_id', $order->branch_id)
+        $employees = Employee::whereHas('branches', fn ($q) => $q->where('branches.id', $order->branch_id))
             ->where('status', 'active')
             ->with('user')
             ->get();
@@ -74,7 +74,7 @@ class OrderObserver
      */
     protected function notifyBranchManager(Order $order): void
     {
-        $manager = Employee::where('branch_id', $order->branch_id)
+        $manager = Employee::whereHas('branches', fn ($q) => $q->where('branches.id', $order->branch_id))
             ->whereHas('user.roles', fn ($q) => $q->where('name', 'manager'))
             ->with('user')
             ->first();

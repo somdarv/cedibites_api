@@ -51,9 +51,25 @@ return [
     ],
 
     'hubtel' => [
+        // SMS credentials
         'client_id' => env('HUBTEL_CLIENT_ID'),
         'client_secret' => env('HUBTEL_CLIENT_SECRET'),
         'sender_id' => env('HUBTEL_SENDER_ID', 'CediBites'),
+        'sms_base_url' => env('HUBTEL_SMS_BASE_URL', 'https://sms.hubtel.com/v1/messages'),
+
+        // Payment gateway credentials (can be same as SMS or different)
+        'payment_client_id' => env('HUBTEL_PAYMENT_CLIENT_ID', env('HUBTEL_CLIENT_ID')),
+        'payment_client_secret' => env('HUBTEL_PAYMENT_CLIENT_SECRET', env('HUBTEL_CLIENT_SECRET')),
+        'merchant_account_number' => env('HUBTEL_MERCHANT_ACCOUNT_NUMBER'),
+        'base_url' => env('HUBTEL_BASE_URL', 'https://payproxyapi.hubtel.com'),
+        'status_check_url' => env('HUBTEL_STATUS_CHECK_URL', 'https://api-txnstatus.hubtel.com'),
+
+        /*
+         * IMPORTANT: The Hubtel Status Check API requires IP whitelisting.
+         * You must contact Hubtel support to whitelist your server's IP address
+         * before the verifyTransaction() method will work in production.
+         * Without IP whitelisting, status check requests will be rejected.
+         */
     ],
 
 ];

@@ -23,6 +23,8 @@ class AuthUserResource extends JsonResource
                 'id' => $this->customer->id,
                 'is_guest' => $this->customer->is_guest,
             ],
+            'roles' => $this->roles->pluck('name'),
+            'permissions' => $this->getAllPermissions()->pluck('name'),
         ];
     }
 }

@@ -15,6 +15,7 @@ class MenuCategoryResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'slug' => $this->slug,
             'description' => $this->description,
             'display_order' => $this->display_order,
             'is_active' => $this->is_active,

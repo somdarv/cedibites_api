@@ -19,6 +19,8 @@ return new class extends Migration
             $table->string('phone')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password')->nullable();
+            $table->boolean('must_reset_password')->default(false);
+            $table->timestamp('password_reset_required_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();

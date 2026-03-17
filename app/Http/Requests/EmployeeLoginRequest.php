@@ -22,7 +22,7 @@ class EmployeeLoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email'],
+            'identifier' => ['required', 'string'],
             'password' => ['required', 'string'],
         ];
     }
@@ -35,8 +35,7 @@ class EmployeeLoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.required' => 'Email is required',
-            'email.email' => 'Email must be a valid email address',
+            'identifier.required' => 'Email or phone number is required',
             'password.required' => 'Password is required',
         ];
     }

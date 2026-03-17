@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'permission' => \App\Http\Middleware\EnsureUserHasPermission::class,
+            'cart.identity' => \App\Http\Middleware\EnsureCartIdentity::class,
+            'optional.auth' => \App\Http\Middleware\OptionalSanctumAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

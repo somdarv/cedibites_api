@@ -9,12 +9,24 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\CausesActivity;
+use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, Notifiable, SoftDeletes;
+    use CausesActivity, HasApiTokens, HasFactory, HasRoles, LogsActivity, Notifiable, SoftDeletes;
+
+    protected static array $recordEvents = ['created'];
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('auth')
+            ->logOnly(['name', 'phone', 'email']);
+    }
 
     /**
      * The default guard name for Spatie Permission.
@@ -34,6 +46,8 @@ class User extends Authenticatable
         'username',
         'phone',
         'password',
+        'must_reset_password',
+        'password_reset_required_at',
     ];
 
     /**
@@ -56,6 +70,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_reset_password' => 'boolean',
+            'password_reset_required_at' => 'datetime',
         ];
     }
 

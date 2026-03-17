@@ -23,6 +23,7 @@ class SendOTPRequest extends FormRequest
     {
         return [
             'phone' => ['required', 'string', 'regex:/^\+233[0-9]{9}$/'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
         ];
     }
 
@@ -36,6 +37,8 @@ class SendOTPRequest extends FormRequest
         return [
             'phone.required' => 'Phone number is required',
             'phone.regex' => 'Phone number must be a valid Ghana phone number (+233XXXXXXXXX)',
+            'email.email' => 'Please enter a valid email address',
+            'email.unique' => 'This email is already registered',
         ];
     }
 }

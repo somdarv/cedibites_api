@@ -9,10 +9,13 @@ use App\Http\Requests\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
 use App\Models\Employee;
 use App\Models\User;
+use App\Notifications\PasswordResetRequiredNotification;
+use App\Notifications\StaffAccountCreatedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class EmployeeController extends Controller
 {
@@ -21,10 +24,12 @@ class EmployeeController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Employee::with(['user.roles', 'branch']);
+        $query = Employee::with(['user.roles.permissions', 'user.permissions', 'branches']);
 
         if ($request->has('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+            $query->whereHas('branches', function ($q) use ($request) {
+                $q->where('branches.id', $request->branch_id);
+            });
         }
 
         if ($request->has('status')) {
@@ -51,37 +56,67 @@ class EmployeeController extends Controller
     /**
      * Store a newly created resource in storage.
      */
+    /**
+     * Store a newly created resource in storage.
+     */
     public function store(CreateEmployeeRequest $request): JsonResponse
     {
         DB::beginTransaction();
 
         try {
+            $password = $request->filled('password')
+                ? $request->password
+                : Str::password(12);
+
             // Create user
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'phone' => $request->phone,
-                'password' => Hash::make($request->password),
+                'password' => Hash::make($password),
             ]);
 
             // Assign role
             $user->assignRole($request->role);
 
-            // Create employee
-            $employee = Employee::create([
+            // Assign individual permissions if provided
+            if ($request->has('permissions') && is_array($request->permissions)) {
+                $user->givePermissionTo($request->permissions);
+            }
+
+            // Create employee with all fields
+            $employeeData = [
                 'user_id' => $user->id,
-                'branch_id' => $request->branch_id,
                 'employee_no' => 'EMP'.str_pad(Employee::count() + 1, 5, '0', STR_PAD_LEFT),
                 'hire_date' => $request->hire_date ?? now(),
                 'status' => $request->status ?? EmployeeStatus::Active->value,
-            ]);
+            ];
+
+            // Add optional fields if provided
+            $optionalFields = [
+                'pos_pin', 'ssnit_number', 'ghana_card_id', 'tin_number',
+                'date_of_birth', 'nationality', 'emergency_contact_name',
+                'emergency_contact_phone', 'emergency_contact_relationship',
+            ];
+
+            foreach ($optionalFields as $field) {
+                if ($request->filled($field)) {
+                    $employeeData[$field] = $request->$field;
+                }
+            }
+
+            $employee = Employee::create($employeeData);
+            $employee->branches()->sync($request->branch_ids);
 
             DB::commit();
 
-            return response()->success(
-                new EmployeeResource($employee->load(['user.roles', 'branch'])),
-                'Employee created successfully.',
-                201
+            // Only send notification if not in testing environment
+            if (! app()->environment('testing')) {
+                $user->notify(new StaffAccountCreatedNotification($password));
+            }
+
+            return response()->created(
+                new EmployeeResource($employee->load(['user.roles.permissions', 'user.permissions', 'branches']))
             );
         } catch (\Exception $e) {
             DB::rollBack();
@@ -96,7 +131,7 @@ class EmployeeController extends Controller
     public function show(Employee $employee): JsonResponse
     {
         return response()->success(
-            new EmployeeResource($employee->load(['user.roles', 'branch'])),
+            new EmployeeResource($employee->load(['user.roles.permissions', 'user.permissions', 'branches'])),
             'Employee retrieved successfully.'
         );
     }
@@ -127,26 +162,62 @@ class EmployeeController extends Controller
 
             // Update role if provided
             if ($request->has('role')) {
+                $oldRole = $employee->user->getRoleNames()->first();
                 $employee->user->syncRoles([$request->role]);
+                if ($oldRole !== $request->role) {
+                    activity('admin')
+                        ->causedBy($request->user())
+                        ->performedOn($employee)
+                        ->event('role_changed')
+                        ->withProperties([
+                            'employee_name' => $employee->user->name,
+                            'old_role' => $oldRole,
+                            'new_role' => $request->role,
+                        ])
+                        ->log("Role changed: {$employee->user->name} from {$oldRole} to {$request->role}");
+                }
             }
 
-            // Update employee
-            $employeeData = [];
-            if ($request->has('branch_id')) {
-                $employeeData['branch_id'] = $request->branch_id;
+            // Update individual permissions if provided
+            if ($request->has('permissions') && is_array($request->permissions)) {
+                $employee->user->syncPermissions($request->permissions);
             }
+
+            // Update employee basic fields
+            $employeeData = [];
             if ($request->has('status')) {
                 $employeeData['status'] = $request->status;
+            }
+            if ($request->has('hire_date')) {
+                $employeeData['hire_date'] = $request->hire_date;
+            }
+
+            // Update HR fields if provided
+            $hrFields = [
+                'pos_pin', 'ssnit_number', 'ghana_card_id', 'tin_number',
+                'date_of_birth', 'nationality', 'emergency_contact_name',
+                'emergency_contact_phone', 'emergency_contact_relationship',
+            ];
+
+            foreach ($hrFields as $field) {
+                if ($request->has($field)) {
+                    $employeeData[$field] = $request->$field;
+                }
             }
 
             if (! empty($employeeData)) {
                 $employee->update($employeeData);
             }
 
+            // Update branch assignments
+            if ($request->has('branch_ids')) {
+                $employee->branches()->sync($request->branch_ids);
+            }
+
             DB::commit();
 
             return response()->success(
-                new EmployeeResource($employee->fresh(['user.roles', 'branch'])),
+                new EmployeeResource($employee->fresh(['user.roles.permissions', 'user.permissions', 'branches'])),
                 'Employee updated successfully.'
             );
         } catch (\Exception $e) {
@@ -161,9 +232,58 @@ class EmployeeController extends Controller
      */
     public function destroy(Employee $employee): JsonResponse
     {
-        // Soft delete by setting status to inactive
-        $employee->update(['status' => EmployeeStatus::Inactive->value]);
+        // Soft delete by setting status to suspended
+        $employee->update(['status' => EmployeeStatus::Suspended->value]);
 
         return response()->success(null, 'Employee deactivated successfully.');
+    }
+
+    /**
+     * Force logout an employee by revoking all their tokens.
+     */
+    public function forceLogout(Employee $employee): JsonResponse
+    {
+        $employee->user->tokens()->delete();
+
+        activity('admin')
+            ->causedBy(request()->user())
+            ->performedOn($employee)
+            ->event('force_logout')
+            ->withProperties([
+                'employee_name' => $employee->user->name,
+                'employee_id' => $employee->id,
+            ])
+            ->log("Forced logout: {$employee->user->name}");
+
+        return response()->json([
+            'message' => 'Employee logged out successfully.',
+        ]);
+    }
+
+    /**
+     * Require password reset for an employee.
+     */
+    public function requirePasswordReset(Employee $employee): JsonResponse
+    {
+        $employee->user->update([
+            'must_reset_password' => true,
+            'password_reset_required_at' => now(),
+        ]);
+
+        $employee->user->notify(new PasswordResetRequiredNotification);
+
+        activity('admin')
+            ->causedBy(request()->user())
+            ->performedOn($employee)
+            ->event('password_reset_required')
+            ->withProperties([
+                'employee_name' => $employee->user->name,
+                'employee_id' => $employee->id,
+            ])
+            ->log("Password reset required: {$employee->user->name}");
+
+        return response()->json([
+            'message' => 'Password reset required successfully.',
+        ]);
     }
 }

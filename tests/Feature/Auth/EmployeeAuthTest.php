@@ -22,16 +22,15 @@ describe('Employee Login', function () {
             'password' => bcrypt($this->password),
         ]);
 
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
             'status' => EmployeeStatus::Active,
         ]);
 
         $user->assignRole(Role::Employee->value);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'employee@cedibites.com',
+            'identifier' => 'employee@cedibites.com',
             'password' => $this->password,
         ]);
 
@@ -42,23 +41,16 @@ describe('Employee Login', function () {
                     'user' => [
                         'id',
                         'name',
-                        'email',
-                        'phone',
-                        'employee' => [
-                            'id',
-                            'employee_no',
-                            'status',
-                            'branch',
-                        ],
-                        'roles',
-                        'permissions',
+                        'role',
+                        'branch',
+                        'branchId',
                     ],
                 ],
             ]);
 
         expect($response->json('data.token'))->toBeString();
-        expect($response->json('data.user.email'))->toBe('employee@cedibites.com');
-        expect($response->json('data.user.employee.status'))->toBe('active');
+        expect($response->json('data.user.name'))->toBe($user->name);
+        expect($response->json('data.user.role'))->toBe('employee');
     });
 
     test('rejects invalid credentials', function () {
@@ -67,13 +59,12 @@ describe('Employee Login', function () {
             'password' => bcrypt($this->password),
         ]);
 
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
         ]);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'employee@cedibites.com',
+            'identifier' => 'employee@cedibites.com',
             'password' => 'wrong-password',
         ]);
 
@@ -87,7 +78,7 @@ describe('Employee Login', function () {
         ]);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'customer@cedibites.com',
+            'identifier' => 'customer@cedibites.com',
             'password' => $this->password,
         ]);
 
@@ -103,14 +94,13 @@ describe('Employee Login', function () {
             'password' => bcrypt($this->password),
         ]);
 
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
             'status' => EmployeeStatus::Suspended,
         ]);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'employee@cedibites.com',
+            'identifier' => 'employee@cedibites.com',
             'password' => $this->password,
         ]);
 
@@ -126,46 +116,35 @@ describe('Employee Login', function () {
             'password' => bcrypt($this->password),
         ]);
 
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
             'status' => EmployeeStatus::Terminated,
         ]);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'employee@cedibites.com',
+            'identifier' => 'employee@cedibites.com',
             'password' => $this->password,
         ]);
 
         $response->assertForbidden();
     });
 
-    test('validates email is required', function () {
+    test('validates identifier is required', function () {
         $response = $this->postJson('/api/v1/employee/login', [
             'password' => $this->password,
         ]);
 
         $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['email']);
+            ->assertJsonValidationErrors(['identifier']);
     });
 
     test('validates password is required', function () {
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'employee@cedibites.com',
+            'identifier' => 'employee@cedibites.com',
         ]);
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['password']);
-    });
-
-    test('validates email format', function () {
-        $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'not-an-email',
-            'password' => $this->password,
-        ]);
-
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['email']);
     });
 
     test('returns roles and permissions', function () {
@@ -174,32 +153,29 @@ describe('Employee Login', function () {
             'password' => bcrypt($this->password),
         ]);
 
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
             'status' => EmployeeStatus::Active,
         ]);
 
         $user->assignRole(Role::Manager->value);
 
         $response = $this->postJson('/api/v1/employee/login', [
-            'email' => 'manager@cedibites.com',
+            'identifier' => 'manager@cedibites.com',
             'password' => $this->password,
         ]);
 
         $response->assertOk();
 
-        expect($response->json('data.user.roles'))->toContain('manager');
-        expect($response->json('data.user.permissions'))->toBeArray();
+        expect($response->json('data.user.role'))->toBe('manager');
     });
 });
 
 describe('Employee Logout', function () {
     test('logs out employee successfully', function () {
         $user = User::factory()->create();
-        Employee::factory()->create([
+        Employee::factory()->forBranches([$this->branch])->create([
             'user_id' => $user->id,
-            'branch_id' => $this->branch->id,
         ]);
 
         $token = $user->createToken('employee-auth-token');

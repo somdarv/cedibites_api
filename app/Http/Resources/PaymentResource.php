@@ -18,15 +18,18 @@ class PaymentResource extends JsonResource
             'amount' => $this->amount,
             'payment_method' => $this->payment_method,
             'payment_status' => $this->payment_status,
-            'transaction_reference' => $this->transaction_reference,
+            'transaction_id' => $this->transaction_id,
+            'checkout_url' => $this->payment_gateway_response['checkoutUrl'] ?? null,
+            'checkout_direct_url' => $this->payment_gateway_response['checkoutDirectUrl'] ?? null,
             'paid_at' => $this->paid_at?->toISOString(),
             'created_at' => $this->created_at?->toISOString(),
+            'updated_at' => $this->updated_at?->toISOString(),
             'order' => $this->whenLoaded('order', fn () => [
                 'id' => $this->order->id,
                 'order_number' => $this->order->order_number,
                 'customer' => [
-                    'name' => $this->order->customer->user->name,
-                    'phone' => $this->order->customer->user->phone,
+                    'name' => $this->order->customer->user->name ?? null,
+                    'phone' => $this->order->customer->user->phone ?? null,
                 ],
             ]),
         ];

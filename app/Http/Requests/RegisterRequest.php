@@ -24,6 +24,7 @@ class RegisterRequest extends FormRequest
         return [
             'phone' => ['required', 'string', 'regex:/^\+233[0-9]{9}$/', 'unique:users,phone'],
             'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
         ];
     }
 
@@ -40,6 +41,8 @@ class RegisterRequest extends FormRequest
             'phone.unique' => 'This phone number is already registered',
             'name.required' => 'Name is required',
             'name.max' => 'Name must not exceed 255 characters',
+            'email.email' => 'Please enter a valid email address',
+            'email.unique' => 'This email is already registered',
         ];
     }
 }

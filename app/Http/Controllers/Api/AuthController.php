@@ -9,19 +9,21 @@ use App\Http\Requests\VerifyOTPRequest;
 use App\Http\Resources\AuthUserResource;
 use App\Models\Customer;
 use App\Models\User;
+use App\Notifications\OtpNotification;
 use App\Notifications\WelcomeNotification;
+use App\Services\HubtelSmsService;
 use App\Services\OTPService;
-use App\Services\SMSService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 class AuthController extends Controller
 {
     public function __construct(
         protected OTPService $otpService,
-        protected SMSService $smsService
+        protected HubtelSmsService $smsService
     ) {}
 
     /**
@@ -30,19 +32,36 @@ class AuthController extends Controller
     public function sendOTP(SendOTPRequest $request): JsonResponse
     {
         try {
-            $phone = $request->validated()['phone'];
+            $validated = $request->validated();
+            $phone = $validated['phone'];
+            $email = $validated['email'] ?? null;
             $otp = $this->otpService->generate();
 
             $this->otpService->store($phone, $otp, $request->ip());
-            $smsSent = $this->smsService->sendOTP($phone, $otp);
+
+            $message = "Your CediBites verification code is: {$otp}. Valid for 5 minutes.";
+            // Strip the + prefix for Hubtel API
+            $hubtelPhone = ltrim($phone, '+');
+            $result = $this->smsService->sendSingle($hubtelPhone, $message);
+            $smsSent = isset($result['messageId']);
 
             if (! $smsSent) {
                 \Log::error('Failed to send OTP SMS', ['phone' => $phone]);
             }
 
+            if ($email) {
+                try {
+                    Notification::route('mail', $email)->notify(new OtpNotification($otp));
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send OTP email', [
+                        'email' => $email,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return response()->success([
                 'message' => 'OTP sent successfully',
-                'dev_otp' => app()->environment('local') ? $otp : null,
             ]);
         } catch (\Exception $e) {
             \Log::error('OTP send failed', [
@@ -75,11 +94,19 @@ class AuthController extends Controller
         $user = User::where('phone', $phone)->first();
 
         if ($user) {
+            if (! $user->customer) {
+                Customer::create([
+                    'user_id' => $user->id,
+                    'is_guest' => false,
+                ]);
+                $user->load('customer');
+            }
+
             $token = $user->createToken('auth-token')->plainTextToken;
 
             return response()->success([
                 'token' => $token,
-                'user' => new AuthUserResource($user->load('customer')),
+                'user' => new AuthUserResource($user->load(['customer', 'roles.permissions'])),
             ]);
         }
 
@@ -109,6 +136,7 @@ class AuthController extends Controller
             $user = User::create([
                 'name' => $validated['name'],
                 'phone' => $phone,
+                'email' => $validated['email'] ?? null,
             ]);
 
             Customer::create([
@@ -125,7 +153,7 @@ class AuthController extends Controller
 
             return response()->created([
                 'token' => $token,
-                'user' => new AuthUserResource($user->load('customer')),
+                'user' => new AuthUserResource($user->load(['customer', 'roles.permissions'])),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -139,9 +167,17 @@ class AuthController extends Controller
      */
     public function user(Request $request): JsonResponse
     {
-        return response()->success(
-            new AuthUserResource($request->user()->load('customer'))
-        );
+        $user = $request->user()->load(['customer', 'roles.permissions']);
+
+        if (! $user->customer) {
+            Customer::create([
+                'user_id' => $user->id,
+                'is_guest' => false,
+            ]);
+            $user->load('customer');
+        }
+
+        return response()->success(new AuthUserResource($user));
     }
 
     /**

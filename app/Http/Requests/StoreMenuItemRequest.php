@@ -25,7 +25,12 @@ class StoreMenuItemRequest extends FormRequest
             'branch_id' => ['required', 'exists:branches,id'],
             'category_id' => ['nullable', 'exists:menu_categories,id'],
             'name' => ['required', 'string', 'max:255'],
-            'slug' => ['required', 'string', 'max:255'],
+            'slug' => [
+                'required',
+                'string',
+                'max:255',
+                'unique:menu_items,slug,NULL,id,branch_id,'.$this->input('branch_id'),
+            ],
             'description' => ['nullable', 'string'],
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'is_available' => ['boolean'],
@@ -46,6 +51,7 @@ class StoreMenuItemRequest extends FormRequest
             'category_id.exists' => 'Selected category does not exist',
             'name.required' => 'Menu item name is required',
             'slug.required' => 'Slug is required',
+            'slug.unique' => 'A menu item with this name already exists in this branch',
             'base_price.numeric' => 'Base price must be a number',
             'base_price.min' => 'Base price cannot be negative',
         ];

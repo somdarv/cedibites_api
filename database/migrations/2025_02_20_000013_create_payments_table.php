@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_id')->constrained('orders')->onDelete('cascade');
             $table->foreignId('customer_id')->nullable()->constrained('customers')->onDelete('set null');
-            $table->enum('payment_method', ['momo', 'cash_delivery', 'cash_pickup']);
-            $table->enum('payment_status', ['pending', 'completed', 'failed', 'refunded'])->default('pending')->index();
+            $table->enum('payment_method', ['mobile_money', 'card', 'wallet', 'ghqr', 'cash']);
+            $table->enum('payment_status', ['pending', 'completed', 'failed', 'refunded', 'cancelled', 'expired'])->default('pending')->index();
             $table->decimal('amount', 10, 2);
             $table->string('transaction_id')->nullable()->unique();
             $table->json('payment_gateway_response')->nullable();

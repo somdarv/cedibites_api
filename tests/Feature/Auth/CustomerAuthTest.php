@@ -3,7 +3,8 @@
 use App\Models\Customer;
 use App\Models\Otp;
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use App\Notifications\OtpNotification;
+use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     $this->phone = '+233'.fake()->unique()->numerify('#########');
@@ -11,8 +12,6 @@ beforeEach(function () {
 
 describe('Send OTP', function () {
     test('sends OTP successfully', function () {
-        Log::shouldReceive('info')->once();
-
         $response = $this->postJson('/api/v1/auth/send-otp', [
             'phone' => $this->phone,
         ]);
@@ -47,13 +46,44 @@ describe('Send OTP', function () {
     });
 
     test('accepts valid Ghana phone format', function () {
-        Log::shouldReceive('info')->once();
-
         $response = $this->postJson('/api/v1/auth/send-otp', [
             'phone' => '+233501234567',
         ]);
 
         $response->assertOk();
+    });
+
+    test('rejects duplicate email when provided', function () {
+        User::factory()->create(['email' => 'existing@example.com', 'phone' => $this->phone]);
+
+        $response = $this->postJson('/api/v1/auth/send-otp', [
+            'phone' => '+233501234568',
+            'email' => 'existing@example.com',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['email']);
+    });
+
+    test('accepts optional email when unique', function () {
+        $response = $this->postJson('/api/v1/auth/send-otp', [
+            'phone' => $this->phone,
+            'email' => 'newuser@example.com',
+        ]);
+
+        $response->assertOk();
+    });
+
+    test('sends OTP to email when email is provided', function () {
+        Notification::fake();
+
+        $response = $this->postJson('/api/v1/auth/send-otp', [
+            'phone' => $this->phone,
+            'email' => 'user@example.com',
+        ]);
+
+        $response->assertOk();
+        Notification::assertSentOnDemand(OtpNotification::class);
     });
 });
 
@@ -271,6 +301,28 @@ describe('Register', function () {
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['name']);
+    });
+
+    test('registers with optional email when provided', function () {
+        Otp::create([
+            'phone' => $this->phone,
+            'otp' => '123456',
+            'expires_at' => now()->addMinutes(5),
+            'verified' => true,
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/register', [
+            'phone' => $this->phone,
+            'name' => 'Kwame Mensah',
+            'email' => 'kwame@example.com',
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('users', [
+            'phone' => $this->phone,
+            'email' => 'kwame@example.com',
+        ]);
     });
 });
 

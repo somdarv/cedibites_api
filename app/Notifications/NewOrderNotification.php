@@ -33,7 +33,7 @@ class NewOrderNotification extends Notification implements ShouldQueue
             'order_number' => $this->order->order_number,
             'order_type' => $this->order->order_type,
             'total_amount' => $this->order->total_amount,
-            'customer_name' => $this->order->customer->user->name,
+            'customer_name' => $this->order->customer?->user?->name ?? $this->order->contact_name,
             'items_count' => $this->order->items->count(),
             'message' => "New order #{$this->order->order_number} received!",
         ];

@@ -13,7 +13,7 @@ class PaymentFactory extends Factory
         return [
             'order_id' => Order::factory(),
             'customer_id' => Customer::factory(),
-            'payment_method' => fake()->randomElement(['momo', 'cash_delivery', 'cash_pickup']),
+            'payment_method' => fake()->randomElement(['mobile_money', 'card', 'wallet', 'cash']),
             'payment_status' => fake()->randomElement(['pending', 'completed', 'failed']),
             'amount' => fake()->randomFloat(2, 50, 200),
             'transaction_id' => fake()->optional()->uuid(),
@@ -29,6 +29,38 @@ class PaymentFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'payment_status' => 'completed',
             'paid_at' => now(),
+        ]);
+    }
+
+    public function pending(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'payment_status' => 'pending',
+            'paid_at' => null,
+        ]);
+    }
+
+    public function mobileMoney(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'payment_method' => 'mobile_money',
+            'transaction_id' => fake()->uuid(),
+        ]);
+    }
+
+    public function card(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'payment_method' => 'card',
+            'transaction_id' => fake()->uuid(),
+        ]);
+    }
+
+    public function wallet(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'payment_method' => 'wallet',
+            'transaction_id' => fake()->uuid(),
         ]);
     }
 }

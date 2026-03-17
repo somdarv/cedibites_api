@@ -11,6 +11,7 @@ class CustomerSeeder extends Seeder
 {
     public function run(): void
     {
+        // Create registered customers
         for ($i = 1; $i <= 10; $i++) {
             $user = User::updateOrCreate(
                 ['email' => 'customer'.$i.'@example.com'],
@@ -53,6 +54,26 @@ class CustomerSeeder extends Seeder
                     ]
                 );
             }
+        }
+
+        // Create guest customers (customers without user accounts)
+        for ($i = 1; $i <= 5; $i++) {
+            $customer = Customer::create([
+                'user_id' => null,
+                'is_guest' => true,
+                'guest_session_id' => 'guest-'.time().'-'.fake()->unique()->regexify('[a-z0-9]{15}'),
+            ]);
+
+            // Create address for guest customer
+            Address::create([
+                'customer_id' => $customer->id,
+                'label' => 'Delivery Address',
+                'full_address' => fake()->streetAddress().', Accra',
+                'note' => fake()->optional()->sentence(),
+                'latitude' => fake()->latitude(5.5, 5.7),
+                'longitude' => fake()->longitude(-0.3, -0.1),
+                'is_default' => true,
+            ]);
         }
     }
 }

@@ -26,13 +26,35 @@ class UpdateBranchRequest extends FormRequest
             'area' => 'sometimes|string|max:255',
             'address' => 'sometimes|string',
             'phone' => 'sometimes|string|max:20',
+            'email' => 'nullable|email|max:255',
             'latitude' => 'sometimes|numeric|between:-90,90',
             'longitude' => 'sometimes|numeric|between:-180,180',
             'is_active' => 'boolean',
-            'operating_hours' => 'nullable|string',
-            'delivery_fee' => 'sometimes|numeric|min:0',
-            'delivery_radius_km' => 'sometimes|numeric|min:0',
-            'estimated_delivery_time' => 'nullable|string',
+            'manager_id' => 'nullable|exists:employees,id',
+
+            // Operating hours
+            'operating_hours' => 'nullable|array',
+            'operating_hours.*.is_open' => 'boolean',
+            'operating_hours.*.open_time' => 'nullable|date_format:H:i',
+            'operating_hours.*.close_time' => 'nullable|date_format:H:i',
+
+            // Delivery settings
+            'delivery_settings' => 'nullable|array',
+            'delivery_settings.base_delivery_fee' => 'sometimes|numeric|min:0',
+            'delivery_settings.per_km_fee' => 'nullable|numeric|min:0',
+            'delivery_settings.delivery_radius_km' => 'sometimes|numeric|min:0',
+            'delivery_settings.min_order_value' => 'nullable|numeric|min:0',
+            'delivery_settings.estimated_delivery_time' => 'nullable|string',
+
+            // Order types
+            'order_types' => 'nullable|array',
+            'order_types.*.is_enabled' => 'boolean',
+            'order_types.*.metadata' => 'nullable|array',
+
+            // Payment methods
+            'payment_methods' => 'nullable|array',
+            'payment_methods.*.is_enabled' => 'boolean',
+            'payment_methods.*.metadata' => 'nullable|array',
         ];
     }
 }

@@ -9,27 +9,25 @@ class EmployeeAuthResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
+     * Returns StaffUser shape for frontend compatibility.
      *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $roles = $this->getRoleNames();
+        $role = $roles->first() ?? 'employee';
+
+        $firstBranch = $this->employee->branches->first();
+
         return [
-            'id' => $this->id,
+            'id' => (string) $this->employee->id,
             'name' => $this->name,
-            'email' => $this->email,
-            'phone' => $this->phone,
-            'employee' => [
-                'id' => $this->employee->id,
-                'employee_no' => $this->employee->employee_no,
-                'status' => $this->employee->status->value,
-                'branch' => [
-                    'id' => $this->employee->branch->id,
-                    'name' => $this->employee->branch->name,
-                    'area' => $this->employee->branch->area,
-                ],
-            ],
-            'roles' => $this->getRoleNames(),
+            'role' => $role,
+            'branch' => $firstBranch?->name ?? '',
+            'branchId' => (string) ($firstBranch?->id ?? ''),
+            'branchIds' => $this->employee->branches->pluck('id')->values()->all(),
+            'roles' => $roles,
             'permissions' => $this->getAllPermissions()->pluck('name'),
         ];
     }

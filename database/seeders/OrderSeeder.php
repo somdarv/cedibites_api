@@ -29,10 +29,20 @@ class OrderSeeder extends Seeder
     private function createOrder(Customer $customer, Branch $branch): void
     {
         $subtotal = fake()->randomFloat(2, 80, 250);
-        $deliveryFee = $branch->delivery_fee;
+        $deliverySetting = $branch->activeDeliverySetting();
+        $deliveryFee = $deliverySetting ? $deliverySetting->base_delivery_fee : 0;
         $taxRate = 0.025;
         $taxAmount = $subtotal * $taxRate;
         $total = $subtotal + $deliveryFee + $taxAmount;
+
+        // For guest customers, generate contact info; for registered customers, use user info
+        if ($customer->is_guest) {
+            $contactName = fake()->name();
+            $contactPhone = '+233'.fake()->numerify('#########');
+        } else {
+            $contactName = $customer->user->name;
+            $contactPhone = $customer->user->phone;
+        }
 
         $order = Order::create([
             'order_number' => 'CB'.fake()->unique()->numberBetween(100000, 999999),
@@ -44,8 +54,8 @@ class OrderSeeder extends Seeder
             'delivery_address' => $customer->addresses()->first()->full_address ?? fake()->address(),
             'delivery_latitude' => fake()->latitude(5.5, 5.7),
             'delivery_longitude' => fake()->longitude(-0.3, -0.1),
-            'contact_name' => $customer->user->name,
-            'contact_phone' => $customer->user->phone,
+            'contact_name' => $contactName,
+            'contact_phone' => $contactPhone,
             'delivery_note' => fake()->optional()->sentence(),
             'subtotal' => $subtotal,
             'delivery_fee' => $deliveryFee,
@@ -96,7 +106,7 @@ class OrderSeeder extends Seeder
         Payment::create([
             'order_id' => $order->id,
             'customer_id' => $customer->id,
-            'payment_method' => fake()->randomElement(['momo', 'cash_delivery']),
+            'payment_method' => fake()->randomElement(['mobile_money', 'cash']),
             'payment_status' => 'completed',
             'amount' => $total,
             'transaction_id' => 'TXN'.fake()->unique()->numerify('##########'),

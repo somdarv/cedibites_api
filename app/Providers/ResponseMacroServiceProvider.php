@@ -48,8 +48,8 @@ class ResponseMacroServiceProvider extends ServiceProvider
         });
 
         // Deleted response (204)
-        Response::macro('deleted', function (mixed $data = null) {
-            return response()->noContent();
+        Response::macro('deleted', function (mixed $data = null): JsonResponse {
+            return response()->json(null, 204);
         });
 
         // Error response (400)

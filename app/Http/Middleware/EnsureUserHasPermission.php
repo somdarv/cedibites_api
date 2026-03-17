@@ -17,8 +17,18 @@ class EnsureUserHasPermission
             return response()->error('Unauthenticated.', 401);
         }
 
+        $user = $request->user();
+        $userRoles = $user->getRoleNames()->toArray();
+        $userPermissions = $user->getAllPermissions()->pluck('name')->toArray();
+
         foreach ($permissions as $permission) {
-            if (! $request->user()->can($permission)) {
+            if (! $user->can($permission)) {
+                \Log::warning('Permission Denied', [
+                    'user_id' => $user->id,
+                    'required_permission' => $permission,
+                    'user_permissions' => $userPermissions,
+                ]);
+
                 return response()->error('You do not have permission to perform this action.', 403);
             }
         }

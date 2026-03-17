@@ -2,14 +2,14 @@
 
 namespace App\Channels;
 
-use App\Services\SMSService;
+use App\Services\HubtelSmsService;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
 class SmsChannel
 {
     public function __construct(
-        protected SMSService $smsService
+        protected HubtelSmsService $smsService
     ) {}
 
     /**
@@ -35,12 +35,15 @@ class SmsChannel
         $message = $notification->toSms($notifiable);
 
         try {
-            $this->smsService->send($phone, $message);
+            // Strip the + prefix for Hubtel API
+            $hubtelPhone = ltrim($phone, '+');
+            $result = $this->smsService->sendSingle($hubtelPhone, $message);
 
             Log::info('SMS notification sent', [
                 'notifiable_id' => $notifiable->id,
                 'phone' => $phone,
                 'notification' => get_class($notification),
+                'message_id' => $result['messageId'] ?? null,
             ]);
         } catch (\Exception $e) {
             Log::error('SMS notification failed', [

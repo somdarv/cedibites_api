@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('customers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->unique()->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade');
             $table->boolean('is_guest')->default(false)->index();
             $table->string('guest_session_id', 64)->nullable()->unique()->index();
+            $table->enum('status', ['active', 'inactive', 'suspended'])->default('active')->index();
             $table->timestamps();
             $table->softDeletes();
         });

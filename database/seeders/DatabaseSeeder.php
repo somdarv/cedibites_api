@@ -15,10 +15,14 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             RoleSeeder::class,
             BranchSeeder::class,
+            MenuCategorySeeder::class,
             EmployeeSeeder::class,
             MenuSeeder::class,
+            MenuConfigSeeder::class,
+            PromoSeeder::class,
             CustomerSeeder::class,
             OrderSeeder::class,
+            ShiftSeeder::class,
             CartSeeder::class,
         ]);
     }
