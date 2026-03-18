@@ -241,6 +241,7 @@ class HubtelService
             'amount' => $order->total_amount,
             'client_reference' => $payload['clientReference'],
             'payload' => $this->sanitizeForLogging($payload),
+            'Authorization' => $this->getAuthHeader(),
         ]);
 
         // Send POST request to Hubtel initiate endpoint
