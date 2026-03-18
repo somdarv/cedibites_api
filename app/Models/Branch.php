@@ -1,0 +1,161 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
+
+class Branch extends Model
+{
+    use HasFactory, LogsActivity;
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('admin')
+            ->logOnly(['name', 'address', 'is_active'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
+    }
+
+    protected $fillable = [
+        'name',
+        'area',
+        'address',
+        'phone',
+        'email',
+        'latitude',
+        'longitude',
+        'is_active',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'latitude' => 'decimal:8',
+            'longitude' => 'decimal:8',
+            'is_active' => 'boolean',
+        ];
+    }
+
+    public function employees(): BelongsToMany
+    {
+        return $this->belongsToMany(Employee::class, 'employee_branch')->withTimestamps();
+    }
+
+    public function menuCategories(): HasMany
+    {
+        return $this->hasMany(MenuCategory::class);
+    }
+
+    public function menuItems(): HasMany
+    {
+        return $this->hasMany(MenuItem::class);
+    }
+
+    public function carts(): HasMany
+    {
+        return $this->hasMany(Cart::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    /**
+     * Get the manager(s) for this branch.
+     * Returns employees with 'manager' role assigned to this branch.
+     */
+    public function managers(): BelongsToMany
+    {
+        return $this->employees()
+            ->whereHas('user.roles', function ($query) {
+                $query->where('name', 'manager');
+            })
+            ->where('status', 'active');
+    }
+
+    public function operatingHours(): HasMany
+    {
+        return $this->hasMany(BranchOperatingHour::class);
+    }
+
+    public function deliverySettings(): HasMany
+    {
+        return $this->hasMany(BranchDeliverySetting::class);
+    }
+
+    public function activeDeliverySetting(): ?BranchDeliverySetting
+    {
+        return $this->deliverySettings()
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query->whereNull('effective_from')
+                    ->orWhere('effective_from', '<=', now());
+            })
+            ->where(function ($query) {
+                $query->whereNull('effective_until')
+                    ->orWhere('effective_until', '>=', now());
+            })
+            ->orderBy('effective_from', 'desc')
+            ->first();
+    }
+
+    public function orderTypes(): HasMany
+    {
+        return $this->hasMany(BranchOrderType::class);
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(BranchPaymentMethod::class);
+    }
+
+    /**
+     * Get the primary manager for this branch.
+     * Returns the first active manager, or null if none exists.
+     */
+    public function manager(): ?Employee
+    {
+        return $this->managers()->first();
+    }
+
+    /**
+     * Determine if the branch is currently open based on schedule and manual overrides.
+     */
+    public function isCurrentlyOpen(): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        $today = strtolower(now()->format('l')); // monday, tuesday, etc.
+
+        $todayHours = $this->operatingHours()
+            ->where('day_of_week', $today)
+            ->first();
+
+        if (! $todayHours) {
+            return false;
+        }
+
+        return $todayHours->isCurrentlyOpen();
+    }
+
+    /**
+     * Get the open status as a string (open, closed, busy).
+     */
+    public function getOpenStatus(): string
+    {
+        if (! $this->is_active) {
+            return 'closed';
+        }
+
+        return $this->isCurrentlyOpen() ? 'open' : 'closed';
+    }
+}
