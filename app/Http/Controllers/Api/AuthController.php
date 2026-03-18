@@ -181,9 +181,60 @@ class AuthController extends Controller
     }
 
     /**
+     * Quick registration after order placement (no OTP required).
+     * This allows customers who just placed an order to save their info.
+     */
+    public function quickRegister(Request $request): JsonResponse|Response
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'phone' => ['required', 'string', 'max:20', 'unique:users,phone'],
+            'email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $user = User::create([
+                'name' => $validated['name'],
+                'phone' => $validated['phone'],
+                'email' => $validated['email'] ?? null,
+            ]);
+
+            Customer::create([
+                'user_id' => $user->id,
+                'is_guest' => false,
+            ]);
+
+            DB::commit();
+
+            // Send welcome notification (don't fail if notification fails)
+            try {
+                $user->notify(new WelcomeNotification);
+            } catch (\Exception $e) {
+                \Log::warning('Failed to send welcome notification', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            return response()->created([
+                'token' => $token,
+                'user' => new AuthUserResource($user->load(['customer', 'roles.permissions'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->server_error();
+        }
+    }
+
+    /**
      * Logout user.
      */
-    public function logout(Request $request): Response
+    public function logout(Request $request): JsonResponse|Response
     {
         $request->user()->tokens()->delete();
 

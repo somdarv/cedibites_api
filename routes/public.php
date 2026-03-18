@@ -25,3 +25,6 @@ Route::get('menu-items/{menuItem}', [MenuItemController::class, 'show']);
 Route::get('orders/by-number/{orderNumber}', [OrderController::class, 'showByNumber']);
 Route::post('promos/resolve', [PromoController::class, 'resolve']);
 Route::get('menu-config', [MenuConfigController::class, 'show']);
+
+// Kitchen Display - Public endpoint
+Route::get('kitchen/orders', [OrderController::class, 'kitchenOrders']);

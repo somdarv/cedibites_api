@@ -7,6 +7,7 @@ Route::prefix('auth')->group(function () {
     Route::post('send-otp', [AuthController::class, 'sendOTP'])->middleware('throttle:otp-send');
     Route::post('verify-otp', [AuthController::class, 'verifyOTP'])->middleware('throttle:otp-verify');
     Route::post('register', [AuthController::class, 'register']);
+    Route::post('quick-register', [AuthController::class, 'quickRegister']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('user', [AuthController::class, 'user']);
