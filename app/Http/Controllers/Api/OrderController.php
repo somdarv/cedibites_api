@@ -170,6 +170,27 @@ class OrderController extends Controller
     }
 
     /**
+     * Get orders for kitchen display (public, no auth required).
+     * Returns orders in kitchen-relevant statuses: received, accepted, preparing, ready.
+     */
+    public function kitchenOrders(Request $request): JsonResponse
+    {
+        $branchId = $request->query('branch_id');
+
+        $query = Order::with(['branch', 'items.menuItem', 'items.menuItemSize'])
+            ->whereIn('status', ['received', 'accepted', 'preparing', 'ready'])
+            ->orderBy('created_at', 'asc');
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        $orders = $query->get();
+
+        return response()->success(OrderResource::collection($orders));
+    }
+
+    /**
      * Display the specified resource.
      */
     public function show(Order $order): JsonResponse

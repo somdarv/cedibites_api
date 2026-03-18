@@ -19,14 +19,24 @@ class MenuItemController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $menuItems = MenuItem::with(['branch', 'category', 'sizes'])
+        $query = MenuItem::with(['branch', 'category', 'sizes'])
             ->when($request->branch_id, fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($request->category_id, fn ($query, $categoryId) => $query->where('category_id', $categoryId))
             ->when($request->is_available !== null, fn ($query) => $query->where('is_available', $request->boolean('is_available')))
-            ->when($request->is_popular !== null, fn ($query) => $query->where('is_popular', $request->boolean('is_popular')))
-            ->paginate($request->per_page ?? 15);
+            ->when($request->is_popular !== null, fn ($query) => $query->where('is_popular', $request->boolean('is_popular')));
 
-        return response()->paginated(new MenuItemCollection($menuItems));
+        // If per_page is explicitly set, use pagination
+        // Otherwise return all items (for menu display)
+        if ($request->has('per_page')) {
+            $menuItems = $query->paginate($request->per_page);
+
+            return response()->paginated(new MenuItemCollection($menuItems));
+        }
+
+        // Return all items without pagination
+        $menuItems = $query->get();
+
+        return response()->success(MenuItemResource::collection($menuItems));
     }
 
     /**

@@ -250,6 +250,11 @@ class PosOrderController extends Controller
             return;
         }
 
+        // Call center agents can create orders for any branch
+        if ($employee->user->hasRole(\App\Enums\Role::CallCenter)) {
+            return;
+        }
+
         // Branch managers can create orders for branches they manage
         if ($employee->user->hasRole(\App\Enums\Role::Manager)) {
             $managesBranch = $employee->managedBranches()->where('branches.id', $branchId)->exists();

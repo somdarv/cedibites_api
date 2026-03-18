@@ -16,6 +16,9 @@ class BranchResource extends JsonResource
     {
         $data = parent::toArray($request);
 
+        // Add computed is_open status based on operating hours
+        $data['is_open'] = $this->isCurrentlyOpen();
+
         // Include full menu items if loaded
         if ($this->relationLoaded('menuItems')) {
             $data['menu_items'] = MenuItemResource::collection($this->menuItems);

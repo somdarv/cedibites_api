@@ -95,37 +95,44 @@ class HubtelSmsService
         $data = $response->json();
 
         if (! is_array($data)) {
-            throw new \Exception('Invalid API response format');
+            throw new \Exception('Invalid API response format: Response is not an array');
         }
 
         // Check for single SMS response (messageId)
         if (isset($data['messageId'])) {
-            if (! isset($data['status']) || ! isset($data['responseCode'])) {
-                throw new \Exception('Invalid API response format');
+            // For successful responses, we expect status and responseCode
+            // But if messageId is null, it might be an error response
+            if ($data['messageId'] === null && isset($data['statusDescription'])) {
+                throw new \Exception('SMS API Error: '.$data['statusDescription']);
             }
 
             return [
                 'messageId' => $data['messageId'],
-                'status' => $data['status'],
-                'responseCode' => $data['responseCode'],
+                'status' => $data['status'] ?? null,
+                'responseCode' => $data['responseCode'] ?? $data['status'] ?? null,
             ];
         }
 
         // Check for batch SMS response (messageIds)
         if (isset($data['messageIds'])) {
-            if (! is_array($data['messageIds']) || ! isset($data['status']) || ! isset($data['responseCode'])) {
-                throw new \Exception('Invalid API response format');
+            if (! is_array($data['messageIds'])) {
+                throw new \Exception('Invalid API response format: messageIds is not an array');
             }
 
             return [
                 'messageIds' => $data['messageIds'],
-                'status' => $data['status'],
-                'responseCode' => $data['responseCode'],
+                'status' => $data['status'] ?? null,
+                'responseCode' => $data['responseCode'] ?? $data['status'] ?? null,
             ];
         }
 
+        // Check if it's an error response with statusDescription
+        if (isset($data['statusDescription'])) {
+            throw new \Exception('SMS API Error: '.$data['statusDescription']);
+        }
+
         // Neither messageId nor messageIds found
-        throw new \Exception('Invalid API response format');
+        throw new \Exception('Invalid API response format: Missing messageId or messageIds');
     }
 
     /**
@@ -160,19 +167,22 @@ class HubtelSmsService
                 'Authorization' => $this->getAuthHeader(),
             ])->post("{$this->baseUrl}/send", $payload);
 
-            // Handle non-successful responses
-            if (! $response->successful()) {
+            // Parse response first to check for API-level errors
+            $result = $this->parseResponse($response);
+
+            // Check if the response indicates an error (messageId is null or status indicates failure)
+            if (empty($result['messageId']) || ($result['status'] ?? 0) >= 100) {
+                $responseData = $response->json() ?? [];
+                $errorMessage = $responseData['statusDescription'] ?? 'Unknown error';
+
                 \Illuminate\Support\Facades\Log::error('Hubtel SMS API request failed', [
                     'endpoint' => "{$this->baseUrl}/send",
                     'status_code' => $response->status(),
-                    'response' => $this->sanitizeForLogging($response->json() ?? []),
+                    'response' => $this->sanitizeForLogging($responseData),
                 ]);
 
-                throw new \Exception('Failed to send SMS: '.$response->body());
+                throw new \Exception("Failed to send SMS: {$errorMessage}");
             }
-
-            // Parse and return response
-            $result = $this->parseResponse($response);
 
             // Log success with sanitized data
             \Illuminate\Support\Facades\Log::info('SMS sent successfully', [
