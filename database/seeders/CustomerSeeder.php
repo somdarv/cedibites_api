@@ -18,7 +18,7 @@ class CustomerSeeder extends Seeder
                 [
                     'name' => 'Customer '.$i,
                     'username' => 'customer'.$i,
-                    'phone' => '+233'.str_pad($i, 9, '0', STR_PAD_LEFT),
+                    'phone' => '+2335'.str_pad($i, 8, '0', STR_PAD_LEFT),
                     'password' => bcrypt('password'),
                 ]
             );
