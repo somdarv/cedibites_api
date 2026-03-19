@@ -5,7 +5,7 @@ use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
-use App\Services\HubtelService;
+use App\Services\HubtelPaymentService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -266,7 +266,7 @@ test('property: credential security in log entries', function () {
         ]);
 
         // Initialize transaction via service (this will log)
-        $service = new HubtelService;
+        $service = new HubtelPaymentService;
 
         try {
             $service->initializeTransaction([
@@ -331,7 +331,7 @@ test('property: credential security in payment gateway response field', function
         ]);
 
         // Initialize transaction via service
-        $service = new HubtelService;
+        $service = new HubtelPaymentService;
 
         try {
             $result = $service->initializeTransaction([

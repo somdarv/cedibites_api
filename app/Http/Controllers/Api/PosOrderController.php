@@ -4,11 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePosOrderRequest;
+use App\Services\HubtelPaymentService;
+use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
 
 class PosOrderController extends Controller
 {
-    private const TAX_RATE = 0.025;
+    private function taxRate(): float
+    {
+        return (float) config('app.tax_rate', 0.20);
+    }
 
     private const PRICE_TOLERANCE = 0.01;
 
@@ -45,13 +50,13 @@ class PosOrderController extends Controller
         $items = $request->validated('items');
         $menuItems = $this->validateMenuItems($items, $branchId);
 
-        // Verify prices match expected values
-        $this->verifyPrices($items, $menuItems);
+        // Resolve authoritative DB prices for every item
+        $items = $this->resolveItemPrices($items, $menuItems);
 
         try {
             // Wrap all database operations in a transaction
             $order = \DB::transaction(function () use ($request, $employee, $branchId, $items, $menuItems) {
-                // Calculate order totals
+                // Calculate order totals using DB-authoritative prices
                 $discount = (float) ($request->validated('discount') ?? 0.0);
                 $totals = $this->calculateOrderTotals($items, $discount);
 
@@ -78,7 +83,7 @@ class PosOrderController extends Controller
                     'delivery_note' => $deliveryNote,
                     'subtotal' => $totals['subtotal'],
                     'delivery_fee' => $totals['delivery_fee'],
-                    'tax_rate' => self::TAX_RATE,
+                    'tax_rate' => $this->taxRate(),
                     'tax_amount' => $totals['tax_amount'],
                     'total_amount' => $totals['total_amount'],
                     'status' => 'received',
@@ -101,7 +106,7 @@ class PosOrderController extends Controller
                     // Create snapshots
                     $snapshots = $this->createOrderSnapshots($menuItem, $menuItemSize);
 
-                    // Create order item
+                    // Create order item using DB-authoritative unit_price
                     \App\Models\OrderItem::create([
                         'order_id' => $order->id,
                         'menu_item_id' => $item['menu_item_id'],
@@ -121,34 +126,30 @@ class PosOrderController extends Controller
                 $paymentMethod = $request->validated('payment_method');
 
                 if ($paymentMethod === 'mobile_money') {
-                    // For mobile money, initiate Hubtel payment
+                    // For mobile money, use Hubtel Direct Receive Money (RMP)
+                    // This sends a USSD prompt directly to the customer's phone
                     try {
-                        $hubtelService = app(\App\Services\HubtelService::class);
+                        $hubtelService = app(HubtelPaymentService::class);
 
-                        \Log::info('Attempting to initialize Hubtel payment', [
-                            'order_id' => $order->id,
-                            'order_number' => $orderNumber,
-                            'amount' => $totals['total_amount'],
-                        ]);
+                        $momoPhone = $request->validated('momo_number') ?? $request->validated('contact_phone');
 
-                        $hubtelData = $hubtelService->initializeTransaction([
+                        $hubtelService->initializeReceiveMoney([
                             'order' => $order,
                             'description' => "POS Order {$orderNumber} - {$branch->name}",
                             'customer_name' => $request->validated('contact_name'),
-                            'customer_phone' => $request->validated('momo_number') ?? $request->validated('contact_phone'),
+                            'customer_phone' => $momoPhone,
                         ]);
 
-                        \Log::info('Hubtel payment initialized successfully', [
-                            'order_id' => $order->id,
-                            'checkout_url' => $hubtelData['checkoutUrl'] ?? null,
-                        ]);
-
-                        // Payment record is created by HubtelService with status 'pending'
-                        // The payment will be completed via Hubtel callback
-                    } catch (\RuntimeException $e) {
-                        // If Hubtel is not configured, create a pending payment record
-                        // This allows the order to be created but payment must be handled manually
-                        \Log::warning('Hubtel not configured, creating pending payment', [
+                        // Payment record is created by initializeReceiveMoney() with status 'pending'
+                        // The payment will be completed via RMP callback when customer approves
+                    } catch (\InvalidArgumentException $e) {
+                        // Phone prefix not recognised as a valid Ghana MoMo number
+                        throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                            response()->json(['message' => $e->getMessage()], 422)
+                        );
+                    } catch (\Exception $e) {
+                        // Hubtel RMP not configured or API failure — create pending payment for manual handling
+                        \Log::warning('Hubtel RMP unavailable, creating pending payment', [
                             'order_id' => $order->id,
                             'error' => $e->getMessage(),
                         ]);
@@ -193,18 +194,16 @@ class PosOrderController extends Controller
             // Load relationships for response
             $order->load(['branch', 'assignedEmployee.user', 'items.menuItem', 'items.menuItemSize', 'payments']);
 
-            // For mobile money payments, include Hubtel checkout URL
+            // For mobile money, include payment ID so the frontend can poll for status
             $responseData = ['data' => $order];
 
             if ($request->validated('payment_method') === 'mobile_money') {
-                // Get the payment record to check if it has Hubtel data
                 $payment = $order->payments->first();
-                if ($payment && $payment->payment_gateway_response) {
-                    $hubtelResponse = $payment->payment_gateway_response;
-                    $responseData['hubtel'] = [
-                        'checkoutUrl' => $hubtelResponse['checkoutUrl'] ?? null,
-                        'checkoutDirectUrl' => $hubtelResponse['checkoutDirectUrl'] ?? null,
-                        'checkoutId' => $hubtelResponse['checkoutId'] ?? null,
+                if ($payment) {
+                    $responseData['payment'] = [
+                        'id' => $payment->id,
+                        'status' => $payment->payment_status,
+                        'transaction_id' => $payment->transaction_id,
                     ];
                 }
             }
@@ -245,8 +244,8 @@ class PosOrderController extends Controller
             );
         }
 
-        // Super admins can create orders for any branch
-        if ($employee->user->hasRole(\App\Enums\Role::SuperAdmin)) {
+        // Admins and super admins can create orders for any branch
+        if ($employee->user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::SuperAdmin])) {
             return;
         }
 
@@ -349,49 +348,33 @@ class PosOrderController extends Controller
     }
 
     /**
-     * Verify that the unit prices in the request match the expected menu item prices.
+     * Resolve the authoritative DB price for each item, overriding whatever
+     * the frontend sent. The backend is always the source of truth for pricing.
      *
      * @param  array  $items  The items array from the request
-     * @param  array  $menuItems  Array of MenuItem models keyed by ID
-     *
-     * @throws \Illuminate\Http\Exceptions\HttpResponseException
+     * @param  array  $menuItems  MenuItem arrays keyed by ID (from validateMenuItems)
+     * @return array Items with unit_price set to the DB-authoritative value
      */
-    private function verifyPrices(array $items, array $menuItems): void
+    private function resolveItemPrices(array $items, array $menuItems): array
     {
-        foreach ($items as $item) {
+        return array_map(function (array $item) use ($menuItems): array {
             $menuItemId = $item['menu_item_id'];
 
-            // Check if menu item exists in the array
-            if (! isset($menuItems[$menuItemId])) {
-                continue; // Skip if not found (should have been caught by validateMenuItems)
-            }
-
-            $menuItem = $menuItems[$menuItemId];
-            $providedPrice = (float) $item['unit_price'];
-
-            // Determine expected price based on whether item has a size
             if (isset($item['menu_item_size_id']) && $item['menu_item_size_id'] !== null) {
-                // Item has a size variant - use the size's price
-                $menuItemSize = \App\Models\MenuItemSize::find($item['menu_item_size_id']);
-                if (! $menuItemSize) {
-                    continue; // Skip if size not found (should have been caught by validateMenuItems)
+                $size = \App\Models\MenuItemSize::find($item['menu_item_size_id']);
+                if ($size) {
+                    $item['unit_price'] = (float) $size->price;
+
+                    return $item;
                 }
-                $expectedPrice = (float) $menuItemSize->price;
-            } else {
-                // Item has no size - use base price
-                $expectedPrice = (float) $menuItem['base_price'];
             }
 
-            // Compare prices with tolerance
-            $priceDifference = abs($providedPrice - $expectedPrice);
-            if ($priceDifference > self::PRICE_TOLERANCE) {
-                throw new \Illuminate\Http\Exceptions\HttpResponseException(
-                    response()->json([
-                        'message' => "Price mismatch for item {$menuItem['name']}: expected {$expectedPrice}, got {$providedPrice}",
-                    ], 422)
-                );
+            if (isset($menuItems[$menuItemId])) {
+                $item['unit_price'] = (float) $menuItems[$menuItemId]['base_price'];
             }
-        }
+
+            return $item;
+        }, $items);
     }
 
     /**
@@ -412,14 +395,14 @@ class PosOrderController extends Controller
         // Subtract discount from subtotal if discount > 0
         $subtotalAfterDiscount = $subtotal - $discount;
 
-        // Calculate tax_amount as (subtotal - discount) * TAX_RATE, rounded to 2 decimals
-        $taxAmount = round($subtotalAfterDiscount * self::TAX_RATE, 2);
+        // Back-calculate the tax already included in the tax-inclusive prices
+        $taxAmount = round($subtotalAfterDiscount * ($this->taxRate() / (1 + $this->taxRate())), 2);
 
         // Set delivery_fee to 0.00 for POS orders
         $deliveryFee = 0.00;
 
-        // Calculate total_amount
-        $totalAmount = $subtotalAfterDiscount + $taxAmount + $deliveryFee;
+        // Total is the tax-inclusive subtotal — tax is not added again
+        $totalAmount = $subtotalAfterDiscount + $deliveryFee;
 
         return [
             'subtotal' => $subtotal,
@@ -436,17 +419,7 @@ class PosOrderController extends Controller
      */
     private function generateOrderNumber(): string
     {
-        // Generate random 6-digit number
-        $number = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $orderNumber = 'CB'.$number;
-
-        // Check if order number already exists
-        if (\App\Models\Order::where('order_number', $orderNumber)->exists()) {
-            // Recursively generate new number if collision occurs
-            return $this->generateOrderNumber();
-        }
-
-        return $orderNumber;
+        return (new OrderNumberService)->generate();
     }
 
     /**

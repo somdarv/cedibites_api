@@ -36,6 +36,6 @@ test('controller has required constants', function () {
     expect($reflection->hasConstant('TAX_RATE'))->toBeTrue();
     expect($reflection->hasConstant('PRICE_TOLERANCE'))->toBeTrue();
 
-    expect($reflection->getConstant('TAX_RATE'))->toBe(0.025);
+    expect($reflection->getConstant('TAX_RATE'))->toBe(0.20);
     expect($reflection->getConstant('PRICE_TOLERANCE'))->toBe(0.01);
 });

@@ -23,7 +23,7 @@ class StoreOrderFromCartRequest extends FormRequest
             'order_type' => ['required', 'in:delivery,pickup'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_phone' => ['required', 'string', 'max:20'],
-            'delivery_address' => ['nullable', 'string'],
+            'delivery_address' => ['required_if:order_type,delivery', 'nullable', 'string', 'min:5'],
             'delivery_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'delivery_longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'special_instructions' => ['nullable', 'string'],

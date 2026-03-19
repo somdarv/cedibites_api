@@ -378,10 +378,11 @@ test('Property 21: Null Variant Handling - null for items without variants', fun
     expect($orderItem['menu_item_size_snapshot'])->toBeNull();
 })->repeat(50);
 
-test('Property 16: Payment Completion - all payment methods completed immediately', function () {
+test('Property 16: Payment Completion - non-momo methods completed immediately, mobile_money pending', function () {
     // **Property 16: Payment Completion**
     // **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7**
     // Feature: pos-order-creation, Property 16: Payment completion
+    // Note: mobile_money uses Hubtel RMP (USSD prompt); payment stays pending until customer approves.
 
     $menuItem = MenuItem::factory()->create([
         'branch_id' => $this->branch->id,
@@ -411,9 +412,16 @@ test('Property 16: Payment Completion - all payment methods completed immediatel
     expect($response->status())->toBe(201);
 
     $payment = $response->json('data.payments.0');
-    expect($payment['payment_status'])->toBe('completed');
-    expect($payment['paid_at'])->not->toBeNull();
     expect((float) $payment['amount'])->toBe((float) $response->json('data.total_amount'));
+
+    if ($paymentMethod === 'mobile_money') {
+        // RMP flow: payment starts pending, confirmed via USSD callback
+        expect($payment['payment_status'])->toBe('pending');
+    } else {
+        // Immediate payment methods
+        expect($payment['payment_status'])->toBe('completed');
+        expect($payment['paid_at'])->not->toBeNull();
+    }
 })->repeat(100);
 
 test('Property 17: POS Payment Customer Null - customer_id is null', function () {

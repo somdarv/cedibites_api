@@ -11,14 +11,19 @@ use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
-    private const TAX_RATE = 0.025;
+    private function taxRate(): float
+    {
+        return (float) config('app.tax_rate', 0.20);
+    }
 
     /**
      * Resolve cart identity (same logic as CartController).
@@ -84,13 +89,10 @@ class OrderController extends Controller
         $branch = $cart->branch;
         $subtotal = $cart->items->sum('subtotal');
         $deliveryFee = $validated['order_type'] === 'delivery' ? (float) ($branch->delivery_fee ?? 15) : 0;
-        $taxAmount = round($subtotal * self::TAX_RATE, 2);
-        $totalAmount = $subtotal + $deliveryFee + $taxAmount;
+        $taxAmount = round($subtotal * ($this->taxRate() / (1 + $this->taxRate())), 2);
+        $totalAmount = $subtotal + $deliveryFee;
 
-        $orderNumber = 'CB'.substr((string) (time() % 1000000 + 100000), -6);
-        while (Order::where('order_number', $orderNumber)->exists()) {
-            $orderNumber = 'CB'.fake()->numerify('######');
-        }
+        $orderNumber = (new OrderNumberService)->generate();
 
         try {
             DB::beginTransaction();
@@ -109,7 +111,7 @@ class OrderController extends Controller
                 'delivery_note' => $validated['special_instructions'] ?? null,
                 'subtotal' => $subtotal,
                 'delivery_fee' => $deliveryFee,
-                'tax_rate' => self::TAX_RATE,
+                'tax_rate' => $this->taxRate(),
                 'tax_amount' => $taxAmount,
                 'total_amount' => $totalAmount,
                 'status' => 'received',
@@ -148,6 +150,7 @@ class OrderController extends Controller
             return response()->created(new OrderResource($order));
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Order creation failed', ['error' => $e->getMessage(), 'exception' => $e]);
 
             return response()->server_error();
         }
@@ -167,6 +170,27 @@ class OrderController extends Controller
         }
 
         return response()->success(new OrderResource($order));
+    }
+
+    /**
+     * Get orders for order manager display (public, no auth required).
+     * Returns in-progress orders: received, preparing, ready.
+     */
+    public function orderManagerOrders(Request $request): JsonResponse
+    {
+        $branchId = $request->query('branch_id');
+
+        $query = Order::with(['branch', 'customer.user', 'items.menuItem', 'items.menuItemSize', 'statusHistory', 'payments'])
+            ->whereIn('status', ['received', 'preparing', 'ready'])
+            ->orderBy('created_at', 'asc');
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        $orders = $query->get();
+
+        return response()->success(OrderResource::collection($orders));
     }
 
     /**
@@ -212,6 +236,8 @@ class OrderController extends Controller
                 new OrderResource($order->fresh(['customer.user', 'branch', 'items']))
             );
         } catch (\Exception $e) {
+            Log::error('Order update failed', ['order_id' => $order->id, 'error' => $e->getMessage(), 'exception' => $e]);
+
             return response()->server_error();
         }
     }
@@ -226,7 +252,41 @@ class OrderController extends Controller
 
             return response()->deleted();
         } catch (\Exception $e) {
+            Log::error('Order deletion failed', ['order_id' => $order->id, 'error' => $e->getMessage(), 'exception' => $e]);
+
             return response()->server_error();
         }
+    }
+
+    /**
+     * Cancel an order.
+     */
+    public function cancel(Request $request, Order $order): JsonResponse
+    {
+        $terminal = ['delivered', 'completed', 'cancelled'];
+
+        if (in_array($order->status, $terminal)) {
+            return response()->error('Order cannot be cancelled in its current status', 422);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $order->update([
+            'status' => 'cancelled',
+            'cancelled_at' => now(),
+            'cancelled_reason' => $validated['reason'] ?? null,
+        ]);
+
+        activity()
+            ->causedBy($request->user())
+            ->performedOn($order)
+            ->withProperties(['reason' => $validated['reason'] ?? null])
+            ->log("Order {$order->order_number} cancelled");
+
+        return response()->success(
+            new OrderResource($order->fresh(['customer.user', 'branch', 'items', 'payments']))
+        );
     }
 }

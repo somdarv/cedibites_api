@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('order_status_history', function (Blueprint $table) {
             $table->id();
             $table->foreignId('order_id')->constrained('orders')->onDelete('cascade');
-            $table->enum('status', ['received', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'completed', 'cancelled']);
+            $table->enum('status', ['received', 'accepted', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'completed', 'cancelled']);
             $table->text('notes')->nullable();
             $table->enum('changed_by_type', ['customer', 'employee', 'system'])->default('system');
             $table->unsignedBigInteger('changed_by_id')->nullable();

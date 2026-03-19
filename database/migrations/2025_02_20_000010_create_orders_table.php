@@ -30,7 +30,7 @@ return new class extends Migration
             $table->decimal('tax_rate', 5, 4)->default(0.0250);
             $table->decimal('tax_amount', 10, 2)->default(0.00);
             $table->decimal('total_amount', 10, 2);
-            $table->enum('status', ['received', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'completed', 'cancelled'])->default('received')->index();
+            $table->enum('status', ['received', 'accepted', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'completed', 'cancelled'])->default('received')->index();
             $table->integer('estimated_prep_time')->nullable();
             $table->dateTime('estimated_delivery_time')->nullable();
             $table->dateTime('actual_delivery_time')->nullable();

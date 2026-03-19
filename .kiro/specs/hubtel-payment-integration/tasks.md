@@ -29,14 +29,14 @@ The integration enables customers (both authenticated and guest) to complete ord
     - _Requirements: 10.1, 10.2, 10.3_
 
 
-- [x] 2. Implement HubtelService core functionality
-  - [x] 2.1 Create HubtelService class with constructor and configuration loading
-    - Use `php artisan make:class Services/HubtelService --no-interaction`
+- [x] 2. Implement HubtelPaymentService core functionality
+  - [x] 2.1 Create HubtelPaymentService class with constructor and configuration loading
+    - Use `php artisan make:class Services/HubtelPaymentService --no-interaction`
     - Implement constructor with configuration loading from config('services.hubtel')
     - Add configuration validation that throws RuntimeException if credentials missing
     - _Requirements: 7.1, 7.2, 10.1, 10.2, 10.3, 10.5_
   
-  - [x] 2.2 Write unit tests for HubtelService constructor
+  - [x] 2.2 Write unit tests for HubtelPaymentService constructor
     - Test constructor loads configuration correctly
     - Test constructor throws exception when credentials missing
     - _Requirements: 7.2, 10.5_
@@ -69,7 +69,7 @@ The integration enables customers (both authenticated and guest) to complete ord
     - **Validates: Requirements 4.2, 4.3, 5.3, 9.6**
 
 - [x] 3. Implement payment initiation functionality
-  - [x] 3.1 Implement initializeTransaction() method in HubtelService
+  - [x] 3.1 Implement initializeTransaction() method in HubtelPaymentService
     - Accept array with order, customer details, description
     - Build Hubtel API request payload with all required fields
     - Use clientReference = order->order_number (max 32 chars)
@@ -113,7 +113,7 @@ The integration enables customers (both authenticated and guest) to complete ord
 
 
 - [x] 4. Implement callback handling functionality
-  - [x] 4.1 Implement handleCallback() method in HubtelService
+  - [x] 4.1 Implement handleCallback() method in HubtelPaymentService
     - Parse callback JSON payload (ResponseCode, Status, Data)
     - Extract CheckoutId, SalesInvoiceId, ClientReference, Amount, CustomerPhoneNumber, PaymentDetails
     - Map PaymentDetails.PaymentType to payment_method: 'mobilemoney'→'mobile_money', 'card'→'card', 'wallet'→'wallet', 'ghqr'→'ghqr', 'cash'→'cash'
@@ -166,7 +166,7 @@ The integration enables customers (both authenticated and guest) to complete ord
     - _Requirements: 14.4_
 
 - [x] 5. Implement payment verification functionality
-  - [x] 5.1 Implement verifyTransaction() method in HubtelService
+  - [x] 5.1 Implement verifyTransaction() method in HubtelPaymentService
     - Accept clientReference (order_number) parameter
     - Send GET request to Status Check API with Basic Auth
     - Parse response (transactionId, externalTransactionId, amount, charges, status)
@@ -193,7 +193,7 @@ The integration enables customers (both authenticated and guest) to complete ord
 
 
 - [x] 6. Implement error handling and retry logic
-  - [x] 6.1 Implement executeWithRetry() method in HubtelService
+  - [x] 6.1 Implement executeWithRetry() method in HubtelPaymentService
     - Accept callable request and maxRetries parameter (default 3)
     - Implement exponential backoff (1s, 2s, 4s)
     - Catch ConnectionException and retry
@@ -216,7 +216,7 @@ The integration enables customers (both authenticated and guest) to complete ord
     - **Property 25: Sensitive Data Sanitization in Logs**
     - **Validates: Requirements 11.8**
   
-  - [x] 6.5 Add comprehensive logging throughout HubtelService
+  - [x] 6.5 Add comprehensive logging throughout HubtelPaymentService
     - Log payment initiation with order_id, amount, clientReference
     - Log callback receipt with ResponseCode, Status, CheckoutId
     - Log verification attempts with timestamp and result
@@ -263,21 +263,21 @@ The integration enables customers (both authenticated and guest) to complete ord
 - [-] 8. Implement PaymentController endpoints
   - [x] 8.1 Create or update PaymentController with Hubtel endpoints
     - Create PaymentController if it doesn't exist: `php artisan make:controller Api/PaymentController --no-interaction`
-    - Inject HubtelService via constructor
+    - Inject HubtelPaymentService via constructor
     - _Requirements: 8.1_
   
   - [x] 8.2 Implement initiateHubtelPayment() method
     - Accept InitiateHubtelPaymentRequest and Order parameters
     - Support both authenticated and guest customers
     - Use order contact info for guest customers (contact_name, contact_phone)
-    - Call HubtelService->initializeTransaction()
+    - Call HubtelPaymentService->initializeTransaction()
     - Return PaymentResource with success message
     - Handle exceptions and return appropriate error responses
     - _Requirements: 8.2, 8.5, 8.7, 15.1, 15.2, 15.3_
   
   - [x] 8.3 Implement hubtelCallback() method
     - Accept Request parameter (no authentication required)
-    - Call HubtelService->handleCallback()
+    - Call HubtelPaymentService->handleCallback()
     - Return HTTP 200 acknowledgment to Hubtel
     - Handle exceptions and log errors
     - _Requirements: 8.3, 4.8, 4.10_
@@ -285,7 +285,7 @@ The integration enables customers (both authenticated and guest) to complete ord
   - [x] 8.4 Implement verifyPayment() method
     - Accept Payment parameter (route model binding)
     - Require Sanctum authentication
-    - Call HubtelService->verifyTransaction()
+    - Call HubtelPaymentService->verifyTransaction()
     - Return PaymentResource with verification result
     - _Requirements: 8.4, 8.5, 5.8, 15.6_
   
@@ -353,7 +353,7 @@ The integration enables customers (both authenticated and guest) to complete ord
     - Check existing migration allows customer_id to be null
     - _Requirements: 6.3, 6.8, 15.1, 15.3_
   
-  - [x] 13.2 Update HubtelService to handle guest customers
+  - [x] 13.2 Update HubtelPaymentService to handle guest customers
     - Use order contact_name for payeeName when customer_id is null
     - Use order contact_phone for payeeMobileNumber when customer_id is null
     - Set customer_id to null in Payment record for guest orders
@@ -386,7 +386,7 @@ The integration enables customers (both authenticated and guest) to complete ord
     - _Requirements: 6.9_
 
 - [x] 15. Implement refund data recording
-  - [x] 15.1 Update HubtelService to handle refund status
+  - [x] 15.1 Update HubtelPaymentService to handle refund status
     - When status is 'refunded', set refunded_at timestamp
     - Store refund_reason if provided in callback
     - _Requirements: 5.5, 6.7_
@@ -422,7 +422,7 @@ The integration enables customers (both authenticated and guest) to complete ord
   
   - [x] 16.4 Run all Hubtel tests with coverage
     - Execute `php artisan test --filter=Hubtel --compact`
-    - Verify minimum 90% line coverage for HubtelService
+    - Verify minimum 90% line coverage for HubtelPaymentService
     - _Requirements: 13.1-13.12_
 
 - [x] 17. Checkpoint - Ensure all tests pass
@@ -473,7 +473,7 @@ The integration enables customers (both authenticated and guest) to complete ord
 ## Implementation Order Rationale
 
 1. **Database and Configuration (Tasks 1)**: Foundation for all subsequent work
-2. **Core Service (Tasks 2-6)**: Build HubtelService incrementally with tests
+2. **Core Service (Tasks 2-6)**: Build HubtelPaymentService incrementally with tests
 3. **Validation (Task 7)**: Ensure input validation before controller implementation
 4. **Controllers and Routes (Tasks 8-10)**: Wire up HTTP endpoints
 5. **Supporting Features (Tasks 12-15)**: Factory states, guest support, activity log, refunds

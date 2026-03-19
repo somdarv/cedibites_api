@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
-class HubtelService
+class HubtelPaymentService
 {
     protected ?string $clientId;
 
@@ -20,6 +20,12 @@ class HubtelService
 
     protected string $statusCheckUrl;
 
+    protected ?string $rmpClientId;
+
+    protected ?string $rmpClientSecret;
+
+    protected string $rmpBaseUrl;
+
     public function __construct()
     {
         $this->clientId = config('services.hubtel.payment_client_id');
@@ -27,6 +33,9 @@ class HubtelService
         $this->merchantAccountNumber = config('services.hubtel.merchant_account_number');
         $this->baseUrl = config('services.hubtel.base_url', 'https://payproxyapi.hubtel.com');
         $this->statusCheckUrl = config('services.hubtel.status_check_url', 'https://api-txnstatus.hubtel.com');
+        $this->rmpClientId = config('services.hubtel.rmp_client_id');
+        $this->rmpClientSecret = config('services.hubtel.rmp_client_secret');
+        $this->rmpBaseUrl = config('services.hubtel.rmp_base_url', 'https://rmp.hubtel.com');
     }
 
     /**
@@ -385,14 +394,16 @@ class HubtelService
                 'payment_status' => $paymentStatus,
             ]);
 
-            // Trigger order fulfillment if payment completed
+            // Progress order status to 'received' when payment completes
             if ($paymentStatus === 'completed') {
-                // TODO: Implement order fulfillment logic
-                // This could be an event dispatch or direct method call
-                Log::info('Payment completed, order fulfillment triggered', [
-                    'order_id' => $payment->order_id,
-                    'payment_id' => $payment->id,
-                ]);
+                $order = $payment->order;
+                if ($order && $order->status === 'pending') {
+                    $order->update(['status' => 'received']);
+                    Log::info('Order status progressed to received after payment', [
+                        'order_id' => $order->id,
+                        'payment_id' => $payment->id,
+                    ]);
+                }
             }
         } catch (\Exception $e) {
             Log::error('Hubtel callback processing failed', [
@@ -401,6 +412,264 @@ class HubtelService
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Detect the Hubtel MoMo channel from a Ghana phone number prefix.
+     *
+     * @param  string  $phone  Phone number in local (0XXXXXXXXX) or international (233XXXXXXXXX) format
+     * @return string Hubtel channel name: mtn-gh, vodafone-gh, or tigo-gh
+     *
+     * @throws \InvalidArgumentException When the prefix cannot be mapped
+     */
+    public function detectMomoChannel(string $phone): string
+    {
+        // Normalise to local format starting with 0
+        $normalised = $phone;
+        if (str_starts_with($phone, '233') && strlen($phone) === 12) {
+            $normalised = '0'.substr($phone, 3);
+        } elseif (str_starts_with($phone, '+233') && strlen($phone) === 13) {
+            $normalised = '0'.substr($phone, 4);
+        }
+
+        $prefix = substr($normalised, 0, 3);
+
+        return match ($prefix) {
+            '024', '054', '055', '059', '025', '053', '026', '056' => 'mtn-gh',
+            '020', '050' => 'vodafone-gh',
+            '027', '057', '067' => 'tigo-gh',
+            default => throw new \InvalidArgumentException(
+                "Cannot determine mobile network for number prefix '{$prefix}'. ".
+                'Please ensure the customer number is a valid Ghana mobile money number.'
+            ),
+        };
+    }
+
+    /**
+     * Validate that Hubtel RMP credentials are configured
+     *
+     * @throws RuntimeException
+     */
+    protected function validateRmpConfiguration(): void
+    {
+        if (empty($this->rmpClientId) || empty($this->rmpClientSecret) || empty($this->merchantAccountNumber)) {
+            throw new RuntimeException(
+                'Hubtel Direct Receive Money is not properly configured. '.
+                'Please set HUBTEL_RMP_CLIENT_ID, HUBTEL_RMP_CLIENT_SECRET, and HUBTEL_MERCHANT_ACCOUNT_NUMBER.'
+            );
+        }
+    }
+
+    /**
+     * Build Basic Auth header for the RMP API
+     */
+    protected function getRmpAuthHeader(): string
+    {
+        return 'Basic '.base64_encode($this->rmpClientId.':'.$this->rmpClientSecret);
+    }
+
+    /**
+     * Initiate a Direct Receive Money request via Hubtel RMP.
+     * Used for POS mobile money payments — sends a USSD prompt to the customer's phone.
+     *
+     * @param  array{order: \App\Models\Order, customer_phone: string, customer_name?: string, description: string}  $data
+     * @return array Normalised response with transaction_id and status
+     *
+     * @throws \Exception When initiation fails
+     */
+    public function initializeReceiveMoney(array $data): array
+    {
+        $this->validateRmpConfiguration();
+
+        $order = $data['order'];
+        $phone = $data['customer_phone'];
+
+        // Detect the correct Hubtel channel from phone prefix
+        $channel = $this->detectMomoChannel($phone);
+
+        // Normalise phone to international format (233XXXXXXXXX)
+        $msisdn = $phone;
+        if (str_starts_with($phone, '0') && strlen($phone) === 10) {
+            $msisdn = '233'.substr($phone, 1);
+        }
+
+        $payload = [
+            'CustomerName' => $data['customer_name'] ?? $order->contact_name,
+            'CustomerMsisdn' => $msisdn,
+            'Channel' => $channel,
+            'Amount' => round((float) $order->total_amount, 2),
+            'PrimaryCallbackUrl' => route('payments.hubtel.rmp.callback'),
+            'Description' => $data['description'],
+            'ClientReference' => substr($order->order_number, 0, 36),
+        ];
+
+        Log::info('Hubtel RMP receive money initiated', [
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'amount' => $order->total_amount,
+            'channel' => $channel,
+            'client_reference' => $payload['ClientReference'],
+        ]);
+
+        $url = "{$this->rmpBaseUrl}/merchantaccount/merchants/{$this->merchantAccountNumber}/receive/mobilemoney";
+
+        $response = $this->executeWithRetry(fn () => Http::withHeaders([
+            'Authorization' => $this->getRmpAuthHeader(),
+        ])->post($url, $payload));
+
+        if (! $response->successful()) {
+            $responseCode = $response->json('ResponseCode', 'unknown');
+            $message = $this->mapRmpResponseCodeToMessage($responseCode);
+
+            Log::error('Hubtel RMP initiation failed', [
+                'order_id' => $order->id,
+                'response_code' => $responseCode,
+                'status_code' => $response->status(),
+            ]);
+
+            throw new \Exception($message);
+        }
+
+        $responseData = $response->json('Data', []);
+        $responseCode = $response->json('ResponseCode', '');
+        $message = $response->json('Message', '');
+
+        // Create Payment record with pending status
+        $payment = Payment::create([
+            'order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'payment_method' => 'mobile_money',
+            'payment_status' => 'pending',
+            'amount' => $order->total_amount,
+            'transaction_id' => $responseData['TransactionId'] ?? null,
+            'payment_gateway_response' => array_merge($responseData, ['channel' => $channel]),
+        ]);
+
+        Log::info('Hubtel RMP payment pending', [
+            'order_id' => $order->id,
+            'payment_id' => $payment->id,
+            'transaction_id' => $responseData['TransactionId'] ?? null,
+            'channel' => $channel,
+            'message' => $message,
+        ]);
+
+        return [
+            'payment' => $payment,
+            'transactionId' => $responseData['TransactionId'] ?? null,
+            'channel' => $channel,
+            'message' => $message,
+            'responseCode' => $responseCode,
+        ];
+    }
+
+    /**
+     * Handle a Direct Receive Money callback from Hubtel RMP.
+     *
+     * @param  array  $payload  The callback payload from Hubtel
+     *
+     * @throws \Exception When callback processing fails
+     */
+    public function handleRmpCallback(array $payload): void
+    {
+        try {
+            $responseCode = $payload['ResponseCode'] ?? null;
+            $data = $payload['Data'] ?? [];
+
+            if (empty($responseCode) || empty($data)) {
+                Log::error('Hubtel RMP callback missing required fields', [
+                    'payload' => $this->sanitizeForLogging($payload),
+                ]);
+                throw new \Exception('Invalid RMP callback payload');
+            }
+
+            $clientReference = $data['ClientReference'] ?? null;
+            $transactionId = $data['TransactionId'] ?? null;
+            $amount = $data['Amount'] ?? null;
+
+            if (empty($clientReference)) {
+                Log::error('Hubtel RMP callback missing ClientReference', [
+                    'payload' => $this->sanitizeForLogging($payload),
+                ]);
+                throw new \Exception('Missing ClientReference in RMP callback');
+            }
+
+            // RMP success = "0000", failure = "2001" and others
+            $paymentStatus = $responseCode === '0000' ? 'completed' : 'failed';
+
+            // Find payment by order number (clientReference) or transaction ID
+            $payment = Payment::whereHas('order', function ($query) use ($clientReference) {
+                $query->where('order_number', $clientReference);
+            })->first();
+
+            if (! $payment && $transactionId) {
+                $payment = Payment::where('transaction_id', $transactionId)->first();
+            }
+
+            if (! $payment) {
+                Log::error('Hubtel RMP callback: payment not found', [
+                    'client_reference' => $clientReference,
+                    'transaction_id' => $transactionId,
+                ]);
+                throw new \Exception('Payment not found for RMP callback');
+            }
+
+            $updateData = [
+                'payment_status' => $paymentStatus,
+                'payment_gateway_response' => array_merge(
+                    $payment->payment_gateway_response ?? [],
+                    ['rmp_callback' => $payload]
+                ),
+                'paid_at' => $paymentStatus === 'completed' ? now() : $payment->paid_at,
+            ];
+
+            if ($transactionId && ! $payment->transaction_id) {
+                $updateData['transaction_id'] = $transactionId;
+            }
+
+            $payment->update($updateData);
+
+            Log::info('Hubtel RMP callback processed', [
+                'response_code' => $responseCode,
+                'client_reference' => $clientReference,
+                'transaction_id' => $transactionId,
+                'payment_status' => $paymentStatus,
+                'amount' => $amount,
+            ]);
+
+            if ($paymentStatus === 'completed') {
+                $order = $payment->order;
+                if ($order && $order->status === 'pending') {
+                    $order->update(['status' => 'received']);
+                    Log::info('Order status progressed to received after RMP payment', [
+                        'order_id' => $order->id,
+                        'payment_id' => $payment->id,
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Hubtel RMP callback processing failed', [
+                'error' => $e->getMessage(),
+                'payload' => $this->sanitizeForLogging($payload),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Map Hubtel RMP response codes to user-friendly messages
+     */
+    protected function mapRmpResponseCodeToMessage(string $responseCode): string
+    {
+        return match ($responseCode) {
+            '0000' => 'Payment received successfully',
+            '0001' => 'Payment pending — waiting for customer approval',
+            '2001' => 'Payment failed. Customer may have insufficient funds, entered the wrong PIN, or the request timed out.',
+            '4000' => 'Invalid payment data. Please check the phone number and try again.',
+            '4070' => 'Payment amount issue. Please contact support.',
+            '4101' => 'This account is not configured to receive mobile money. Contact support.',
+            '4103' => 'Permission denied for this mobile network channel.',
+            default => 'An unexpected error occurred. Please try again or contact support.',
+        };
     }
 
     /**

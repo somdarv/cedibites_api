@@ -126,7 +126,7 @@ This document specifies the requirements for integrating the Hubtel payment gate
 
 #### Acceptance Criteria
 
-1. THE Hubtel_Service SHALL be implemented as app/Services/HubtelService.php (similar to how PaystackService was structured)
+1. THE Hubtel_Service SHALL be implemented as app/Services/HubtelPaymentService.php (similar to how PaystackService was structured)
 2. THE Hubtel_Service constructor SHALL load client_id, client_secret, and merchant_account_number from config('services.hubtel')
 3. THE Hubtel_Service SHALL use Laravel HTTP client with Basic_Auth (Base64 encoded client_id:client_secret)
 4. THE Hubtel_Service SHALL implement initializeTransaction() method that returns checkoutUrl, checkoutDirectUrl, checkoutId, and clientReference

@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\Order;
-use App\Services\HubtelService;
+use App\Services\HubtelPaymentService;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -34,7 +34,7 @@ test('property: URL generation from routes', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $service->initializeTransaction([
         'order' => $order,

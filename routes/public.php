@@ -28,3 +28,6 @@ Route::get('menu-config', [MenuConfigController::class, 'show']);
 
 // Kitchen Display - Public endpoint
 Route::get('kitchen/orders', [OrderController::class, 'kitchenOrders']);
+
+// Order Manager Display - Public endpoint
+Route::get('order-manager/orders', [OrderController::class, 'orderManagerOrders']);

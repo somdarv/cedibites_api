@@ -125,4 +125,16 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Ghana GRA Tax Rate
+    |--------------------------------------------------------------------------
+    |
+    | Combined Ghana Revenue Authority rate: VAT 15% + NHIL 2.5% + GETFund 2.5% = 20%.
+    | Prices are tax-inclusive; tax is back-calculated as price × (rate / (1 + rate)).
+    |
+    */
+
+    'tax_rate' => 0.20,
+
 ];

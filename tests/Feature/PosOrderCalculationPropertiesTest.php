@@ -20,10 +20,11 @@ beforeEach(function () {
     $this->employee->branches()->attach($this->branch->id);
 });
 
-test('Property 12: Tax Calculation - verifies tax equals subtotal * 0.025 rounded to 2 decimals', function () {
+test('Property 12: Tax Calculation - verifies tax is back-calculated from tax-inclusive subtotal', function () {
     // **Property 12: Tax Calculation**
     // **Validates: Requirements 5.3, 5.4**
     // Feature: pos-order-creation, Property 12: Tax calculation
+    // Prices are tax-inclusive; included tax = subtotal × (0.20 / 1.20)
 
     // Generate random items
     $itemCount = rand(1, 4);
@@ -49,7 +50,7 @@ test('Property 12: Tax Calculation - verifies tax equals subtotal * 0.025 rounde
         $expectedSubtotal += $quantity * $unitPrice;
     }
 
-    $expectedTax = round($expectedSubtotal * 0.025, 2);
+    $expectedTax = round($expectedSubtotal * (0.20 / 1.20), 2);
 
     $requestData = [
         'branch_id' => $this->branch->id,
@@ -65,7 +66,7 @@ test('Property 12: Tax Calculation - verifies tax equals subtotal * 0.025 rounde
 
     expect($response->status())->toBe(201);
     expect((float) $response->json('data.tax_amount'))->toBe($expectedTax);
-    expect((float) $response->json('data.tax_rate'))->toBe(0.025);
+    expect((float) $response->json('data.tax_rate'))->toBe(0.20);
 })->repeat(100);
 
 test('Property 12: Tax Calculation - with discount applied', function () {
@@ -83,8 +84,8 @@ test('Property 12: Tax Calculation - with discount applied', function () {
     $subtotal = $quantity * $unitPrice;
     $discount = round(rand(100, 1000) / 100, 2);
 
-    // Tax should be calculated on (subtotal - discount)
-    $expectedTax = round(($subtotal - $discount) * 0.025, 2);
+    // Tax is back-calculated from the tax-inclusive (subtotal - discount)
+    $expectedTax = round(($subtotal - $discount) * (0.20 / 1.20), 2);
 
     $requestData = [
         'branch_id' => $this->branch->id,
@@ -169,8 +170,7 @@ test('Property 14: Total Amount Calculation - without discount', function () {
         $expectedSubtotal += $quantity * $unitPrice;
     }
 
-    $expectedTax = round($expectedSubtotal * 0.025, 2);
-    $expectedTotal = $expectedSubtotal + $expectedTax + 0.00; // delivery_fee is 0
+    $expectedTotal = $expectedSubtotal + 0.00; // delivery_fee is 0; tax is included in prices
 
     $requestData = [
         'branch_id' => $this->branch->id,
@@ -204,8 +204,7 @@ test('Property 14: Total Amount Calculation - with discount', function () {
     $discount = round(rand(100, 1000) / 100, 2);
 
     $subtotalAfterDiscount = $subtotal - $discount;
-    $expectedTax = round($subtotalAfterDiscount * 0.025, 2);
-    $expectedTotal = $subtotalAfterDiscount + $expectedTax + 0.00;
+    $expectedTotal = $subtotalAfterDiscount + 0.00; // tax is included in prices, not added
 
     $requestData = [
         'branch_id' => $this->branch->id,
