@@ -35,8 +35,8 @@ class ShiftSeeder extends Seeder
                     'branch_id' => $branch->id,
                     'login_at' => now()->subHours(rand(1, 5)),
                     'logout_at' => null,
-                    'total_sales' => fake()->randomFloat(2, 0, 300),
-                    'order_count' => fake()->numberBetween(0, 8),
+                    'total_sales' => 100.00,
+                    'order_count' => 3,
                 ]);
             }
         }

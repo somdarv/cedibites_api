@@ -40,7 +40,7 @@ class CartSeeder extends Seeder
                         'quantity' => $quantity,
                         'unit_price' => $unitPrice,
                         'subtotal' => $quantity * $unitPrice,
-                        'special_instructions' => fake()->optional()->sentence(),
+                        'special_instructions' => null,
                     ]);
                 }
             }
