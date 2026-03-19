@@ -201,7 +201,7 @@ class CartController extends Controller
             if ($cart && $cart->items->count() > 0) {
                 $cart->subtotal = $cart->items->sum('subtotal');
 
-                return response()->success($cart);
+                return response()->success(new CartResource($cart));
             }
 
             return response()->success(null);
