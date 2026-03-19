@@ -68,8 +68,11 @@ class EmployeeOrderController extends Controller
     {
         // Check if order belongs to employee's branch
         $employee = $request->user()->employee;
+        $user = $request->user();
 
-        if (! $employee || ! $employee->branches()->where('branches.id', $order->branch_id)->exists()) {
+        $isAdmin = $user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::SuperAdmin]);
+
+        if (! $isAdmin && (! $employee || ! $employee->branches()->where('branches.id', $order->branch_id)->exists())) {
             return response()->error('You can only update orders from your branch.', 403);
         }
 

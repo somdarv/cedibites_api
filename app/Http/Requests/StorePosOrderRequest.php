@@ -33,8 +33,8 @@ class StorePosOrderRequest extends FormRequest
             'contact_name' => ['required', 'string', 'max:255'],
             'contact_phone' => ['required', 'string', 'max:20'],
             'customer_notes' => ['nullable', 'string'],
-            'discount' => ['nullable', 'numeric', 'min:0'],
-            'momo_number' => ['nullable', 'string', 'max:20'],
+            'discount' => ['nullable', 'numeric', 'min:0', 'max:99999'],
+            'momo_number' => ['nullable', 'string', 'regex:/^(0[0-9]{9}|233[0-9]{9})$/'],
         ];
     }
 
@@ -78,6 +78,7 @@ class StorePosOrderRequest extends FormRequest
             'customer_notes.string' => 'Customer notes must be a string',
             'discount.numeric' => 'Discount must be a number',
             'discount.min' => 'Discount cannot be negative',
+            'momo_number.regex' => 'Mobile money number must be a valid Ghana phone number (e.g. 0241234567 or 233241234567)',
         ];
     }
 }

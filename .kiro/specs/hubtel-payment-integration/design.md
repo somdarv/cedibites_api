@@ -17,7 +17,7 @@ The implementation follows Laravel 12 conventions and mirrors the existing Payst
 ### Integration Flow
 
 1. Customer initiates payment for an order
-2. Application calls HubtelService to initialize transaction
+2. Application calls HubtelPaymentService to initialize transaction
 3. Hubtel returns checkout URLs (redirect and onsite options)
 4. Customer completes payment on Hubtel's interface
 5. Hubtel sends callback to application with payment status
@@ -40,7 +40,7 @@ The implementation follows Laravel 12 conventions and mirrors the existing Payst
 │              Laravel Application                     │
 │                                                      │
 │  ┌──────────────────┐      ┌──────────────────┐   │
-│  │ PaymentController│─────▶│  HubtelService   │   │
+│  │ PaymentController│─────▶│  HubtelPaymentService   │   │
 │  │  (API Routes)    │      │                  │   │
 │  └──────────────────┘      └────────┬─────────┘   │
 │           │                          │              │
@@ -84,10 +84,10 @@ Note: Payment initiation supports both authenticated customers and guest custome
 **PaymentController**
 - Handle HTTP requests for payment operations
 - Validate requests using Form Request classes
-- Delegate business logic to HubtelService
+- Delegate business logic to HubtelPaymentService
 - Return standardized API responses using PaymentResource
 
-**HubtelService**
+**HubtelPaymentService**
 - Encapsulate all Hubtel API communication
 - Manage authentication (Basic Auth with client credentials)
 - Transform application data to Hubtel API format
@@ -122,7 +122,7 @@ Customer → Frontend → POST /api/orders/{order}/payments/hubtel/initiate
                               ↓
                       InitiatePaymentRequest (validation)
                               ↓
-                      HubtelService::initializeTransaction()
+                      HubtelPaymentService::initializeTransaction()
                               ↓
                       Create Payment record (status: pending)
                       - customer_id: auth()->id() OR null (guest)
@@ -147,7 +147,7 @@ Hubtel → POST /api/payments/hubtel/callback (no auth)
               ↓
       PaymentController::callback()
               ↓
-      HubtelService::handleCallback()
+      HubtelPaymentService::handleCallback()
               ↓
       Parse callback payload (ResponseCode, Status, Data)
               ↓
@@ -171,7 +171,7 @@ Admin/System → GET /api/payments/{payment}/verify
                     ↓
             PaymentController::verify()
                     ↓
-            HubtelService::verifyTransaction()
+            HubtelPaymentService::verifyTransaction()
                     ↓
             GET https://api-txnstatus.hubtel.com/transactions/{merchantAccountNumber}/status
                     ↓
@@ -184,9 +184,9 @@ Admin/System → GET /api/payments/{payment}/verify
 
 ## Components and Interfaces
 
-### HubtelService Class
+### HubtelPaymentService Class
 
-**Location**: `app/Services/HubtelService.php`
+**Location**: `app/Services/HubtelPaymentService.php`
 
 **Constructor Dependencies**:
 ```php
@@ -720,7 +720,7 @@ HUBTEL_STATUS_CHECK_URL=https://api-txnstatus.hubtel.com
 
 ### Configuration Validation
 
-The HubtelService constructor should validate required configuration:
+The HubtelPaymentService constructor should validate required configuration:
 
 ```php
 public function __construct()
@@ -761,7 +761,7 @@ config('app.frontend_url') . "/orders/{$order->order_number}/payment/cancelled"
 ### Security Considerations
 
 1. **Credential Storage**: Never commit credentials to version control
-2. **Credential Access**: Only HubtelService should access credentials
+2. **Credential Access**: Only HubtelPaymentService should access credentials
 3. **Logging**: Sanitize credentials from all log entries
 4. **Response Exposure**: Never include credentials in API responses
 5. **Environment Separation**: Use different credentials for sandbox/production
@@ -797,7 +797,7 @@ config('app.frontend_url') . "/orders/{$order->order_number}/payment/cancelled"
 
 ### Response Code Mapping
 
-**HubtelService::mapResponseCodeToMessage()**:
+**HubtelPaymentService::mapResponseCodeToMessage()**:
 
 ```php
 protected function mapResponseCodeToMessage(string $responseCode): string
@@ -815,7 +815,7 @@ protected function mapResponseCodeToMessage(string $responseCode): string
 
 ### Status Mapping
 
-**HubtelService::mapHubtelStatusToPaymentStatus()**:
+**HubtelPaymentService::mapHubtelStatusToPaymentStatus()**:
 
 ```php
 protected function mapHubtelStatusToPaymentStatus(string $hubtelStatus, string $responseCode): string
@@ -1166,7 +1166,7 @@ tests/
 │   ├── HubtelPaymentVerificationTest.php
 │   └── HubtelPaymentEndpointsTest.php
 └── Unit/
-    ├── HubtelServiceTest.php
+    ├── HubtelPaymentServiceTest.php
     ├── HubtelStatusMappingTest.php
     ├── HubtelResponseParsingTest.php
     └── InitiateHubtelPaymentRequestTest.php
@@ -1177,7 +1177,7 @@ tests/
 
 Unit tests focus on specific examples, edge cases, and isolated component behavior.
 
-**HubtelServiceTest.php**:
+**HubtelPaymentServiceTest.php**:
 - Test constructor loads configuration correctly
 - Test constructor throws exception when credentials missing
 - Test Basic Auth header generation format
@@ -1300,7 +1300,7 @@ public function hubtelCompleted(): static
 
 ### Test Coverage Goals
 
-- **Line Coverage**: Minimum 90% for HubtelService
+- **Line Coverage**: Minimum 90% for HubtelPaymentService
 - **Branch Coverage**: Minimum 85% for conditional logic
 - **Property Tests**: Minimum 100 iterations per property
 - **Edge Cases**: All error codes, validation failures, boundaries

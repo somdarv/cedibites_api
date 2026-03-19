@@ -19,10 +19,11 @@ class AuthUserResource extends JsonResource
             'name' => $this->name,
             'phone' => $this->phone,
             'email' => $this->email,
-            'customer' => [
+            'created_at' => $this->created_at,
+            'customer' => $this->customer ? [
                 'id' => $this->customer->id,
                 'is_guest' => $this->customer->is_guest,
-            ],
+            ] : null,
             'roles' => $this->roles->pluck('name'),
             'permissions' => $this->getAllPermissions()->pluck('name'),
         ];

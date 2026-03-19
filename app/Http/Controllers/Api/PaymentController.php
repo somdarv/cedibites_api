@@ -6,13 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
-use App\Services\HubtelService;
+use App\Services\HubtelPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
-    public function __construct(protected HubtelService $hubtelService) {}
+    public function __construct(protected HubtelPaymentService $hubtelService) {}
 
     /**
      * Display a listing of the resource.
@@ -153,6 +153,14 @@ class PaymentController extends Controller
      */
     public function hubtelCallback(Request $request): JsonResponse
     {
+        if (! $this->isAllowedCallbackIp($request)) {
+            \Illuminate\Support\Facades\Log::warning('Hubtel callback rejected: IP not in allowlist', [
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->error('Forbidden', 403);
+        }
+
         try {
             $this->hubtelService->handleCallback($request->all());
 
@@ -160,6 +168,48 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             return response()->error('Callback processing failed', 400);
         }
+    }
+
+    /**
+     * Handle Direct Receive Money callback from Hubtel RMP (POS mobile money)
+     */
+    public function hubtelRmpCallback(Request $request): JsonResponse
+    {
+        if (! $this->isAllowedCallbackIp($request)) {
+            \Illuminate\Support\Facades\Log::warning('Hubtel RMP callback rejected: IP not in allowlist', [
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->error('Forbidden', 403);
+        }
+
+        try {
+            $this->hubtelService->handleRmpCallback($request->all());
+
+            return response()->success(null, 'RMP callback processed successfully');
+        } catch (\Exception $e) {
+            return response()->error('RMP callback processing failed', 400);
+        }
+    }
+
+    /**
+     * Check whether the incoming request originates from an allowed Hubtel IP.
+     *
+     * When HUBTEL_ALLOWED_IPS is not configured (local/dev), all IPs are allowed.
+     * In production, set HUBTEL_ALLOWED_IPS to a comma-separated list of Hubtel's
+     * callback IP addresses to enforce strict allowlisting.
+     */
+    private function isAllowedCallbackIp(Request $request): bool
+    {
+        $allowedIps = config('services.hubtel.allowed_ips');
+
+        if (empty($allowedIps)) {
+            return true;
+        }
+
+        $allowed = array_map('trim', explode(',', $allowedIps));
+
+        return in_array($request->ip(), $allowed, true);
     }
 
     /**
@@ -177,6 +227,56 @@ class PaymentController extends Controller
             );
         } catch (\Exception $e) {
             return response()->error($e->getMessage(), 400);
+        }
+    }
+
+    /**
+     * Initiate a refund for a completed order payment.
+     */
+    public function refundOrder(Request $request, \App\Models\Order $order): JsonResponse
+    {
+        $payment = $order->payments()->where('payment_status', 'completed')->latest()->first();
+
+        if (! $payment) {
+            return response()->error('No completed payment found for this order', 422);
+        }
+
+        if ($payment->payment_status === 'refunded') {
+            return response()->error('Payment has already been refunded', 422);
+        }
+
+        try {
+            // Mark as refunded — Hubtel refund API integration can be added later
+            $payment->update([
+                'payment_status' => 'refunded',
+                'refunded_at' => now(),
+            ]);
+
+            \Illuminate\Support\Facades\Log::info('Order refunded', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_id' => $payment->id,
+                'amount' => $payment->amount,
+            ]);
+
+            activity()
+                ->causedBy($request->user())
+                ->performedOn($order)
+                ->withProperties(['payment_id' => $payment->id, 'amount' => $payment->amount])
+                ->log("Refund initiated for order {$order->order_number}");
+
+            return response()->success(
+                new PaymentResource($payment->fresh()),
+                'Refund initiated successfully'
+            );
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Refund failed', [
+                'order_id' => $order->id,
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->error('Failed to process refund', 500);
         }
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\HubtelService;
+use App\Services\HubtelPaymentService;
 
 test('constructor loads configuration correctly', function () {
     config([
@@ -9,9 +9,9 @@ test('constructor loads configuration correctly', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
-    expect($service)->toBeInstanceOf(HubtelService::class);
+    expect($service)->toBeInstanceOf(HubtelPaymentService::class);
 });
 
 test('methods throw exception when client_id is missing', function () {
@@ -21,7 +21,7 @@ test('methods throw exception when client_id is missing', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
     $order = \App\Models\Order::factory()->create();
 
     expect(fn () => $service->initializeTransaction(['order' => $order, 'description' => 'Test']))
@@ -35,7 +35,7 @@ test('methods throw exception when client_secret is missing', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
     $order = \App\Models\Order::factory()->create();
 
     expect(fn () => $service->initializeTransaction(['order' => $order, 'description' => 'Test']))
@@ -49,7 +49,7 @@ test('methods throw exception when merchant_account_number is missing', function
         'services.hubtel.merchant_account_number' => null,
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
     $order = \App\Models\Order::factory()->create();
 
     expect(fn () => $service->initializeTransaction(['order' => $order, 'description' => 'Test']))
@@ -66,7 +66,7 @@ test('property: basic authentication format', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -94,7 +94,7 @@ test('property: error response code mapping', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -122,7 +122,7 @@ test('property: status mapping consistency', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -161,7 +161,7 @@ test('getAuthHeader returns correctly formatted Basic Auth header', function () 
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
     $reflection = new ReflectionClass($service);
     $method = $reflection->getMethod('getAuthHeader');
     $method->setAccessible(true);
@@ -182,7 +182,7 @@ test('property: callback payment details extraction', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Generate randomized callback payloads
     $paymentTypes = ['mobilemoney', 'card', 'wallet', 'ghqr', 'cash'];
@@ -261,7 +261,7 @@ test('property: payment completion timestamp', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Test scenarios that result in completed status
     $completedScenarios = [
@@ -351,7 +351,7 @@ test('property: callback JSON parsing', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Generate randomized callback payloads
     $responseCodes = ['0000', '2001', '0005', '4000', '4070'];
@@ -449,7 +449,7 @@ test('property: order fulfillment trigger', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Scenarios that result in completed status
     $completedScenarios = [
@@ -539,7 +539,7 @@ test('property: callback JSON round-trip', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $responseCodes = ['0000', '2001', '0005', '4000', '4070'];
     $statuses = ['Success', 'Paid', 'Unpaid', 'Failed', 'Refunded'];
@@ -614,7 +614,7 @@ test('property: callback amount validation', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $responseCodes = ['0000', '2001', '0005'];
     $statuses = ['Success', 'Paid', 'Unpaid', 'Failed'];
@@ -686,7 +686,7 @@ test('handleCallback logs error and throws exception for malformed JSON', functi
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Create order and payment
     $order = \App\Models\Order::factory()->create();
@@ -713,7 +713,7 @@ test('handleCallback throws exception for missing ClientReference', function () 
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Payload with missing ClientReference
     $malformedPayload = [
@@ -745,7 +745,7 @@ test('property: status check response parsing', function () {
     // Run 100 iterations with randomized status check responses
     for ($i = 0; $i < 100; $i++) {
         // Create fresh service instance for each iteration
-        $service = new HubtelService;
+        $service = new HubtelPaymentService;
 
         // Create order and payment
         $order = \App\Models\Order::factory()->create();
@@ -803,7 +803,7 @@ test('verifyTransaction throws exception for non-existent client reference', fun
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Mock HTTP response for status check
     \Illuminate\Support\Facades\Http::fake([
@@ -828,7 +828,7 @@ test('property: network retry logic', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -919,7 +919,7 @@ test('property: sensitive data sanitization in logs', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -989,7 +989,7 @@ test('sanitizeForLogging handles short phone numbers gracefully', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -1015,7 +1015,7 @@ test('sanitizeForLogging handles malformed emails gracefully', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Use reflection to access protected method
     $reflection = new ReflectionClass($service);
@@ -1045,7 +1045,7 @@ test('property: payment initiation logging', function () {
         'app.frontend_url' => 'https://cedibites.com',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Create order
     $order = \App\Models\Order::factory()->create();
@@ -1148,7 +1148,7 @@ test('property: exception logging and safe error response', function () {
         'app.frontend_url' => 'https://cedibites.com',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Create order
     $order = \App\Models\Order::factory()->create();
@@ -1237,7 +1237,7 @@ test('exception logging does not expose sensitive data', function () {
         'app.frontend_url' => 'https://cedibites.com',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Create order
     $order = \App\Models\Order::factory()->create();
@@ -1306,7 +1306,7 @@ test('property: activity logging integration', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
     $customer = \App\Models\Customer::factory()->create();
     $order = \App\Models\Order::factory()->create([
         'customer_id' => $customer->id,
@@ -1401,7 +1401,7 @@ test('property: refund data recording', function () {
         'services.hubtel.merchant_account_number' => 'HM12345',
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $paymentTypes = ['mobilemoney', 'card', 'wallet', 'ghqr', 'cash'];
     $channels = ['mtn-gh', 'vodafone-gh', 'airtel-gh', 'visa', 'mastercard'];

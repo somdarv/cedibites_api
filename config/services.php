@@ -57,18 +57,35 @@ return [
         'sender_id' => env('HUBTEL_SENDER_ID', 'CediBites'),
         'sms_base_url' => env('HUBTEL_SMS_BASE_URL', 'https://sms.hubtel.com/v1/messages'),
 
-        // Payment gateway credentials (can be same as SMS or different)
+        // Online Checkout credentials (payproxyapi - for customer checkout redirect)
         'payment_client_id' => env('HUBTEL_PAYMENT_CLIENT_ID', env('HUBTEL_CLIENT_ID')),
         'payment_client_secret' => env('HUBTEL_PAYMENT_CLIENT_SECRET', env('HUBTEL_CLIENT_SECRET')),
         'merchant_account_number' => env('HUBTEL_MERCHANT_ACCOUNT_NUMBER'),
         'base_url' => env('HUBTEL_BASE_URL', 'https://payproxyapi.hubtel.com'),
         'status_check_url' => env('HUBTEL_STATUS_CHECK_URL', 'https://api-txnstatus.hubtel.com'),
 
+        // Direct Receive Money credentials (rmp.hubtel.com - for POS mobile money)
+        'rmp_client_id' => env('HUBTEL_RMP_CLIENT_ID', env('HUBTEL_PAYMENT_CLIENT_ID', env('HUBTEL_CLIENT_ID'))),
+        'rmp_client_secret' => env('HUBTEL_RMP_CLIENT_SECRET', env('HUBTEL_PAYMENT_CLIENT_SECRET', env('HUBTEL_CLIENT_SECRET'))),
+        'rmp_base_url' => env('HUBTEL_RMP_BASE_URL', 'https://rmp.hubtel.com'),
+
+        // Callback IP allowlist — comma-separated list of Hubtel's callback IPs.
+        // When set, any callback from an IP not in this list is rejected with 403.
+        // Leave empty (unset) to allow all IPs (useful for local development).
+        'allowed_ips' => env('HUBTEL_ALLOWED_IPS'),
+
         /*
-         * IMPORTANT: The Hubtel Status Check API requires IP whitelisting.
-         * You must contact Hubtel support to whitelist your server's IP address
-         * before the verifyTransaction() method will work in production.
-         * Without IP whitelisting, status check requests will be rejected.
+         * IMPORTANT: Both the Status Check API and the RMP API require IP whitelisting.
+         * Submit your server's public IP to your Retail Systems Engineer to be whitelisted.
+         * Without IP whitelisting, requests will receive 403 Forbidden responses.
+         *
+         * ENV variables to set:
+         *   HUBTEL_MERCHANT_ACCOUNT_NUMBER   - Your POS Sales ID (used in RMP endpoint URL)
+         *   HUBTEL_PAYMENT_CLIENT_ID         - Online Checkout API client ID
+         *   HUBTEL_PAYMENT_CLIENT_SECRET     - Online Checkout API client secret
+         *   HUBTEL_RMP_CLIENT_ID             - RMP receive money client ID (or same as payment)
+         *   HUBTEL_RMP_CLIENT_SECRET         - RMP receive money client secret (or same as payment)
+         *   HUBTEL_ALLOWED_IPS               - Comma-separated list of Hubtel callback IPs for security
          */
     ],
 

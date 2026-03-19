@@ -18,6 +18,10 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::post('payments/hubtel/callback', [App\Http\Controllers\Api\PaymentController::class, 'hubtelCallback'])
     ->name('payments.hubtel.callback');
 
+// Hubtel Direct Receive Money (RMP) callback — used for POS mobile money payments
+Route::post('payments/hubtel/rmp/callback', [App\Http\Controllers\Api\PaymentController::class, 'hubtelRmpCallback'])
+    ->name('payments.hubtel.rmp.callback');
+
 Route::middleware('optional.auth')->group(function () {
     Route::post('orders/{order}/payments/hubtel/initiate', [App\Http\Controllers\Api\PaymentController::class, 'initiateHubtelPayment'])
         ->name('payments.hubtel.initiate');

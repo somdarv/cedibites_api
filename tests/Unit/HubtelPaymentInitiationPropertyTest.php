@@ -2,7 +2,7 @@
 
 use App\Models\Customer;
 use App\Models\Order;
-use App\Services\HubtelService;
+use App\Services\HubtelPaymentService;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -45,7 +45,7 @@ test('property: payment initiation request completeness', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $result = $service->initializeTransaction([
         'order' => $order,
@@ -94,7 +94,7 @@ test('property: client reference derivation', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $result = $service->initializeTransaction([
         'order' => $order,
@@ -135,7 +135,7 @@ test('property: optional customer details inclusion', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     // Test with customer details provided
     $service->initializeTransaction([
@@ -176,7 +176,7 @@ test('property: checkout URLs response structure', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $result = $service->initializeTransaction([
         'order' => $order,
@@ -212,7 +212,7 @@ test('property: payment record creation', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $result = $service->initializeTransaction([
         'order' => $order,
@@ -256,7 +256,7 @@ test('property: gateway response persistence', function () {
         ]),
     ]);
 
-    $service = new HubtelService;
+    $service = new HubtelPaymentService;
 
     $result = $service->initializeTransaction([
         'order' => $order,

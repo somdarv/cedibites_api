@@ -20,6 +20,13 @@ class OrderObserver
      */
     public function created(Order $order): void
     {
+        // Record initial status in history
+        $order->statusHistory()->create([
+            'status' => $order->status,
+            'changed_by_type' => 'system',
+            'changed_at' => now(),
+        ]);
+
         // Notify customer when order is created
         $order->customer?->user?->notify(new OrderConfirmedNotification($order));
 
@@ -37,10 +44,17 @@ class OrderObserver
      */
     public function updated(Order $order): void
     {
-        // Only send notifications if status changed
+        // Only act if status changed
         if (! $order->wasChanged('status')) {
             return;
         }
+
+        // Record status change in history
+        $order->statusHistory()->create([
+            'status' => $order->status,
+            'changed_by_type' => 'system',
+            'changed_at' => now(),
+        ]);
 
         $customer = $order->customer?->user;
 

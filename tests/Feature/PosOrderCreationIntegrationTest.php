@@ -70,16 +70,16 @@ test('can create complete POS order with single item', function () {
     expect($response->json('data.assigned_employee_id'))->toBe($employee->id);
     expect($response->json('data.status'))->toBe('received');
     expect($response->json('data.subtotal'))->toBe('40.00');
-    expect($response->json('data.tax_amount'))->toBe('1.00'); // 40 * 0.025
+    expect($response->json('data.tax_amount'))->toBe('6.67'); // 40 * (20/120), back-calculated included tax
     expect($response->json('data.delivery_fee'))->toBe('0.00');
-    expect($response->json('data.total_amount'))->toBe('41.00');
+    expect($response->json('data.total_amount'))->toBe('40.00'); // tax-inclusive; total = subtotal
     expect($response->json('data.order_number'))->toMatch('/^CB\d{6}$/');
     expect($response->json('data.delivery_note'))->toContain('Fulfillment: dine_in');
 
     // Verify payment
     expect($response->json('data.payments'))->toHaveCount(1);
     expect($response->json('data.payments.0.payment_status'))->toBe('completed');
-    expect($response->json('data.payments.0.amount'))->toBe('41.00');
+    expect($response->json('data.payments.0.amount'))->toBe('40.00');
     expect($response->json('data.payments.0.customer_id'))->toBeNull();
 
     // Verify order items
@@ -139,10 +139,10 @@ test('can create POS order with multiple items and variants', function () {
 
     $response->assertStatus(201);
 
-    // Verify calculations: subtotal = 15 + (2 * 30) = 75
+    // Verify calculations: subtotal = 15 + (2 * 30) = 75; tax back-calculated = 75 * (20/120) = 12.50
     expect($response->json('data.subtotal'))->toBe('75.00');
-    expect($response->json('data.tax_amount'))->toBe('1.88'); // 75 * 0.025 = 1.875, rounded to 1.88
-    expect($response->json('data.total_amount'))->toBe('76.88');
+    expect($response->json('data.tax_amount'))->toBe('12.50');
+    expect($response->json('data.total_amount'))->toBe('75.00'); // tax-inclusive; total = subtotal
 
     // Verify items
     expect($response->json('data.items'))->toHaveCount(2);
@@ -186,10 +186,10 @@ test('can create POS order with discount', function () {
 
     $response->assertStatus(201);
 
-    // Verify calculations: subtotal = 100, after discount = 90, tax = 90 * 0.025 = 2.25
+    // Verify calculations: subtotal = 100, after discount = 90, tax = 90 * (20/120) = 15.00; total = 90.00
     expect($response->json('data.subtotal'))->toBe('100.00');
-    expect($response->json('data.tax_amount'))->toBe('2.25');
-    expect($response->json('data.total_amount'))->toBe('92.25');
+    expect($response->json('data.tax_amount'))->toBe('15.00');
+    expect($response->json('data.total_amount'))->toBe('90.00');
 });
 
 test('creates activity log for POS order', function () {
@@ -277,7 +277,10 @@ test('verifies all payment methods work', function ($paymentMethod) {
 
     $response->assertStatus(201);
     expect($response->json('data.payments.0.payment_method'))->toBe($paymentMethod);
-    expect($response->json('data.payments.0.payment_status'))->toBe('completed');
+
+    // mobile_money uses Hubtel RMP (USSD prompt) — stays pending until customer approves
+    $expectedStatus = $paymentMethod === 'mobile_money' ? 'pending' : 'completed';
+    expect($response->json('data.payments.0.payment_status'))->toBe($expectedStatus);
 })->with(['cash', 'mobile_money', 'card', 'wallet', 'ghqr']);
 
 test('verifies order snapshots are created correctly', function () {

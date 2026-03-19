@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
 use App\Models\Payment;
+use App\Services\OrderNumberService;
 use Illuminate\Database\Seeder;
 
 class OrderSeeder extends Seeder
@@ -16,6 +17,7 @@ class OrderSeeder extends Seeder
     {
         $customers = Customer::all();
         $branches = Branch::all();
+        $this->orderNumberService = new OrderNumberService;
 
         foreach ($customers as $customer) {
             $orderCount = rand(1, 3);
@@ -26,14 +28,18 @@ class OrderSeeder extends Seeder
         }
     }
 
+    private OrderNumberService $orderNumberService;
+
     private function createOrder(Customer $customer, Branch $branch): void
     {
+        // Prices are tax-inclusive (Ghana GRA: VAT 15% + NHIL 2.5% + GETFund 2.5% = 20%)
+        // Tax is back-calculated: tax = subtotal × (rate / (1 + rate))
         $subtotal = fake()->randomFloat(2, 80, 250);
         $deliverySetting = $branch->activeDeliverySetting();
         $deliveryFee = $deliverySetting ? $deliverySetting->base_delivery_fee : 0;
-        $taxRate = 0.025;
-        $taxAmount = $subtotal * $taxRate;
-        $total = $subtotal + $deliveryFee + $taxAmount;
+        $taxRate = 0.20;
+        $taxAmount = round($subtotal * ($taxRate / (1 + $taxRate)), 2);
+        $total = $subtotal + $deliveryFee;
 
         // For guest customers, generate contact info; for registered customers, use user info
         if ($customer->is_guest) {
@@ -45,7 +51,7 @@ class OrderSeeder extends Seeder
         }
 
         $order = Order::create([
-            'order_number' => 'CB'.fake()->unique()->numberBetween(100000, 999999),
+            'order_number' => $this->orderNumberService->generate(),
             'customer_id' => $customer->id,
             'branch_id' => $branch->id,
             'assigned_employee_id' => $branch->employees()->inRandomOrder()->first()?->id,
