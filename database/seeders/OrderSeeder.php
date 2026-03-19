@@ -13,6 +13,8 @@ use Illuminate\Database\Seeder;
 
 class OrderSeeder extends Seeder
 {
+    private OrderNumberService $orderNumberService;
+
     public function run(): void
     {
         $customers = Customer::all();
@@ -28,23 +30,25 @@ class OrderSeeder extends Seeder
         }
     }
 
-    private OrderNumberService $orderNumberService;
-
     private function createOrder(Customer $customer, Branch $branch): void
     {
         // Prices are tax-inclusive (Ghana GRA: VAT 15% + NHIL 2.5% + GETFund 2.5% = 20%)
         // Tax is back-calculated: tax = subtotal × (rate / (1 + rate))
-        $subtotal = fake()->randomFloat(2, 80, 250);
+        $subtotal = 150.00;
         $deliverySetting = $branch->activeDeliverySetting();
         $deliveryFee = $deliverySetting ? $deliverySetting->base_delivery_fee : 0;
         $taxRate = 0.20;
         $taxAmount = round($subtotal * ($taxRate / (1 + $taxRate)), 2);
         $total = $subtotal + $deliveryFee;
 
+        $orderTypes = ['delivery', 'pickup'];
+        $orderSources = ['online', 'phone', 'whatsapp', 'instagram'];
+        $statuses = ['received', 'preparing', 'delivered', 'completed'];
+
         // For guest customers, generate contact info; for registered customers, use user info
         if ($customer->is_guest) {
-            $contactName = fake()->name();
-            $contactPhone = '+233'.fake()->numerify('#########');
+            $contactName = 'Guest Customer';
+            $contactPhone = '+233000000000';
         } else {
             $contactName = $customer->user->name;
             $contactPhone = $customer->user->phone;
@@ -55,21 +59,21 @@ class OrderSeeder extends Seeder
             'customer_id' => $customer->id,
             'branch_id' => $branch->id,
             'assigned_employee_id' => $branch->employees()->inRandomOrder()->first()?->id,
-            'order_type' => fake()->randomElement(['delivery', 'pickup']),
-            'order_source' => fake()->randomElement(['online', 'phone', 'whatsapp', 'instagram']),
-            'delivery_address' => $customer->addresses()->first()->full_address ?? fake()->address(),
-            'delivery_latitude' => fake()->latitude(5.5, 5.7),
-            'delivery_longitude' => fake()->longitude(-0.3, -0.1),
+            'order_type' => $orderTypes[array_rand($orderTypes)],
+            'order_source' => $orderSources[array_rand($orderSources)],
+            'delivery_address' => $customer->addresses()->first()->full_address ?? 'Accra, Ghana',
+            'delivery_latitude' => 5.6,
+            'delivery_longitude' => -0.2,
             'contact_name' => $contactName,
             'contact_phone' => $contactPhone,
-            'delivery_note' => fake()->optional()->sentence(),
+            'delivery_note' => null,
             'subtotal' => $subtotal,
             'delivery_fee' => $deliveryFee,
             'tax_rate' => $taxRate,
             'tax_amount' => $taxAmount,
             'total_amount' => $total,
-            'status' => fake()->randomElement(['received', 'preparing', 'delivered', 'completed']),
-            'estimated_prep_time' => fake()->numberBetween(20, 40),
+            'status' => $statuses[array_rand($statuses)],
+            'estimated_prep_time' => 30,
             'estimated_delivery_time' => now()->addMinutes(45),
         ]);
 
@@ -96,7 +100,7 @@ class OrderSeeder extends Seeder
                 'quantity' => $quantity,
                 'unit_price' => $unitPrice,
                 'subtotal' => $quantity * $unitPrice,
-                'special_instructions' => fake()->optional()->sentence(),
+                'special_instructions' => null,
             ]);
         }
 
@@ -112,10 +116,10 @@ class OrderSeeder extends Seeder
         Payment::create([
             'order_id' => $order->id,
             'customer_id' => $customer->id,
-            'payment_method' => fake()->randomElement(['mobile_money', 'cash']),
+            'payment_method' => 'mobile_money',
             'payment_status' => 'completed',
             'amount' => $total,
-            'transaction_id' => 'TXN'.fake()->unique()->numerify('##########'),
+            'transaction_id' => 'TXN'.uniqid(),
             'paid_at' => now(),
         ]);
     }
