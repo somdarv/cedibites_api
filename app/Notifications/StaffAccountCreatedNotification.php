@@ -29,16 +29,6 @@ class StaffAccountCreatedNotification extends Notification implements ShouldQueu
      */
     public function via(object $notifiable): array
     {
-        // Disable SMS in testing environment
-        if (app()->environment('testing')) {
-            $channels = ['database'];
-            if ($notifiable->email) {
-                $channels[] = 'mail';
-            }
-
-            return $channels;
-        }
-
         $channels = ['database', SmsChannel::class];
 
         if ($notifiable->email) {

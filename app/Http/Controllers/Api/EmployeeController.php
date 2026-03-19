@@ -110,10 +110,7 @@ class EmployeeController extends Controller
 
             DB::commit();
 
-            // Only send notification if not in testing environment
-            if (! app()->environment('testing')) {
-                $user->notify(new StaffAccountCreatedNotification($password));
-            }
+            $user->notify(new StaffAccountCreatedNotification($password));
 
             return response()->created(
                 new EmployeeResource($employee->load(['user.roles.permissions', 'user.permissions', 'branches']))

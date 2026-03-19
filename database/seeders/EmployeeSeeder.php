@@ -61,7 +61,7 @@ class EmployeeSeeder extends Seeder
             [
                 'name' => 'Branch Manager '.$branch->id,
                 'username' => 'manager'.$branch->id,
-                'phone' => '+233'.str_pad($branch->id, 9, '0', STR_PAD_LEFT),
+                'phone' => '+23324'.str_pad($branch->id, 7, '0', STR_PAD_LEFT),
                 'password' => bcrypt('password'),
             ]
         );
@@ -87,7 +87,7 @@ class EmployeeSeeder extends Seeder
                 [
                     'name' => 'Employee '.$branch->id.'-'.$i,
                     'username' => 'employee'.$branch->id.$i,
-                    'phone' => '+233'.str_pad($branch->id * 10 + $i, 9, '0', STR_PAD_LEFT),
+                    'phone' => '+23320'.str_pad($branch->id * 10 + $i, 7, '0', STR_PAD_LEFT),
                     'password' => bcrypt('password'),
                 ]
             );
