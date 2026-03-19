@@ -55,15 +55,13 @@ class EmployeeSeeder extends Seeder
 
     private function createEmployeesForBranch(Branch $branch): void
     {
-        $faker = \Faker\Factory::create();
-
         // Create manager (with pos_pin 1234 for POS login testing)
         $manager = User::updateOrCreate(
             ['email' => 'manager.'.$branch->id.'@cedibites.com'],
             [
-                'name' => $faker->name(),
+                'name' => 'Branch Manager '.$branch->id,
                 'username' => 'manager'.$branch->id,
-                'phone' => '+233'.$faker->numerify('#########'),
+                'phone' => '+233'.str_pad($branch->id, 9, '0', STR_PAD_LEFT),
                 'password' => bcrypt('password'),
             ]
         );
@@ -87,9 +85,9 @@ class EmployeeSeeder extends Seeder
             $employee = User::updateOrCreate(
                 ['email' => 'employee.'.$branch->id.'.'.$i.'@cedibites.com'],
                 [
-                    'name' => $faker->name(),
+                    'name' => 'Employee '.$branch->id.'-'.$i,
                     'username' => 'employee'.$branch->id.$i,
-                    'phone' => '+233'.$faker->numerify('#########'),
+                    'phone' => '+233'.str_pad($branch->id * 10 + $i, 9, '0', STR_PAD_LEFT),
                     'password' => bcrypt('password'),
                 ]
             );
@@ -102,7 +100,7 @@ class EmployeeSeeder extends Seeder
                     'employee_no' => 'EMP'.str_pad(($branch->id * 10 + $i), 4, '0', STR_PAD_LEFT),
                     'status' => EmployeeStatus::Active,
                     'hire_date' => now()->subMonths(rand(3, 18)),
-                    'performance_rating' => $faker->randomFloat(2, 3.5, 5.0),
+                    'performance_rating' => round(3.5 + ($i * 0.5), 2),
                 ]
             );
             $emp->branches()->sync([$branch->id]);
