@@ -1,14 +1,13 @@
-name: Deploy Cedibites API
+name: Deploy Cedibites Beta API
 
 on:
   push:
     branches:
-      - master
+      - beta
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.0
@@ -17,11 +16,11 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /var/www/production/laravel/cedibites_api
-            git pull origin master
+            cd /var/www/beta/laravel/cedibites_api
+            git pull origin beta
             composer install --no-dev --optimize-autoloader
-            php artisan config:clear
             php artisan migrate --force
+            php artisan config:clear
             php artisan cache:clear
             php artisan route:clear
             php artisan view:clear
