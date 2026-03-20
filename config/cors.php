@@ -24,6 +24,7 @@ return [
         'http://127.0.0.1:3000',
         'https://cedibites.yarmy.tech',
         'https://app.cedibites.com',
+        'https://beta.cedibites.com',
     ],
 
     'allowed_origins_patterns' => [],
