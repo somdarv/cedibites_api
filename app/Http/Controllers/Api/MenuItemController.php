@@ -60,6 +60,10 @@ class MenuItemController extends Controller
                 $this->syncAddOns($menuItem, $request->input('add_on_ids'));
             }
 
+            if ($request->input('pricing_type') === 'simple') {
+                $this->syncSinglePriceOption($menuItem, (float) $request->input('price', 0));
+            }
+
             return response()->created(
                 new MenuItemResource($menuItem->fresh($this->menuItemWith()))
             );
@@ -115,6 +119,10 @@ class MenuItemController extends Controller
                 $this->syncAddOns($menuItem, $request->input('add_on_ids', []));
             }
 
+            if ($request->input('pricing_type') === 'simple') {
+                $this->syncSinglePriceOption($menuItem, (float) $request->input('price', 0));
+            }
+
             return response()->success(
                 new MenuItemResource($menuItem->fresh($this->menuItemWith()))
             );
@@ -150,6 +158,24 @@ class MenuItemController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    protected function syncSinglePriceOption(MenuItem $menuItem, float $price): void
+    {
+        // Use withTrashed so restoring a soft-deleted standard option doesn't
+        // violate the (menu_item_id, option_key) unique constraint.
+        $option = $menuItem->options()->withTrashed()->firstOrNew(['option_key' => 'standard']);
+        $option->fill([
+            'option_label' => 'Standard',
+            'price' => $price,
+            'display_order' => 0,
+            'is_available' => true,
+            'deleted_at' => null,
+        ]);
+        $option->save();
+
+        // Soft-delete any non-standard options left over from a previous options-mode setup.
+        $menuItem->options()->where('option_key', '!=', 'standard')->delete();
     }
 
     /**

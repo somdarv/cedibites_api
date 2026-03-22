@@ -74,6 +74,7 @@ class EmployeeController extends Controller
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($password),
+                'must_reset_password' => true,
             ]);
 
             // Assign role
@@ -88,7 +89,9 @@ class EmployeeController extends Controller
             // highest existing suffix inside the transaction to avoid races.
             $maxNo = Employee::lockForUpdate()
                 ->where('employee_no', 'like', 'EMP%')
-                ->max(DB::raw('CAST(SUBSTRING(employee_no, 4) AS UNSIGNED)'));
+                ->pluck('employee_no')
+                ->map(fn (string $no) => (int) substr($no, 3))
+                ->max() ?? 0;
             $nextNo = 'EMP'.str_pad((int) $maxNo + 1, 5, '0', STR_PAD_LEFT);
 
             $employeeData = [

@@ -7,7 +7,9 @@ use App\Http\Controllers\Api\ShiftController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('employee')->group(function () {
+    Route::get('me', [EmployeeAuthController::class, 'me']);
     Route::post('logout', [EmployeeAuthController::class, 'logout']);
+    Route::post('change-password', [EmployeeAuthController::class, 'changePassword']);
 });
 
 Route::prefix('pos')->group(function () {

@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Events\OrderBroadcastEvent;
 use App\Models\Employee;
 use App\Models\Order;
 use App\Notifications\HighValueOrderNotification;
@@ -37,6 +38,8 @@ class OrderObserver
         if ($order->total_amount > 200) {
             $this->notifyBranchManager($order);
         }
+
+        OrderBroadcastEvent::dispatch($order, 'created');
     }
 
     /**
@@ -66,6 +69,8 @@ class OrderObserver
             'cancelled' => $customer?->notify(new OrderCancelledNotification($order)),
             default => null,
         };
+
+        OrderBroadcastEvent::dispatch($order, 'updated');
     }
 
     /**
