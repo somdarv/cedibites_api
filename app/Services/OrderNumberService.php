@@ -3,37 +3,113 @@
 namespace App\Services;
 
 use App\Models\Order;
+use Illuminate\Support\Facades\DB;
 
 class OrderNumberService
 {
     /**
-     * Generate the next unique order number.
-     *
-     * Format: "CB" followed by 6 zero-padded digits (CB000001, CB000002, …).
+     * Generate a unique order number, retrying inside a transaction if two
+     * concurrent requests race to the same value. The orders table must have
+     * a unique index on order_number to make this safe.
      */
     public function generate(): string
     {
-        $last = Order::where('order_number', 'like', 'CB%')
-            ->orderByDesc('order_number')
-            ->value('order_number');
+        return DB::transaction(function () {
+            $last = $this->lastAlphabeticCode();
+            $next = $last ? $this->increment($last) : 'A001';
 
-        $next = $last ? $this->increment($last) : 'CB000001';
+            while (Order::lockForUpdate()->where('order_number', $next)->exists()) {
+                $next = $this->increment($next);
+            }
 
-        // Collision safety — retry if somehow already taken
-        while (Order::where('order_number', $next)->exists()) {
-            $next = $this->increment($next);
+            return $next;
+        });
+    }
+
+    private function lastAlphabeticCode(): ?string
+    {
+        $candidates = Order::query()
+            ->pluck('order_number')
+            ->filter(fn (string $n) => (bool) preg_match('/^[A-Z]+\d{3}$/', $n));
+
+        if ($candidates->isEmpty()) {
+            return null;
         }
 
-        return $next;
+        return $candidates
+            ->sort(fn (string $a, string $b) => $this->compareCodes($a, $b))
+            ->last();
+    }
+
+    private function compareCodes(string $a, string $b): int
+    {
+        $pa = $this->parse($a);
+        $pb = $this->parse($b);
+
+        $len = max(strlen($pa['letters']), strlen($pb['letters']));
+        $la = str_pad($pa['letters'], $len, ' ', STR_PAD_RIGHT);
+        $lb = str_pad($pb['letters'], $len, ' ', STR_PAD_RIGHT);
+        $cmp = strcmp($la, $lb);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return $pa['num'] <=> $pb['num'];
     }
 
     /**
-     * Increment a CB-format order number to the next value.
+     * @return array{letters: string, num: int}
      */
-    private function increment(string $orderNumber): string
+    private function parse(string $code): array
     {
-        $num = (int) substr($orderNumber, 2);
+        preg_match('/^([A-Z]+)(\d{3})$/', $code, $m);
 
-        return 'CB'.str_pad($num + 1, 6, '0', STR_PAD_LEFT);
+        return [
+            'letters' => $m[1],
+            'num' => (int) $m[2],
+        ];
+    }
+
+    private function increment(string $code): string
+    {
+        $p = $this->parse($code);
+        if ($p['num'] < 100) {
+            return $p['letters'].str_pad((string) ($p['num'] + 1), 3, '0', STR_PAD_LEFT);
+        }
+
+        return $this->advancePrefix($p['letters']).'001';
+    }
+
+    private function advancePrefix(string $letters): string
+    {
+        if ($letters === 'A') {
+            return 'AB';
+        }
+
+        if (strlen($letters) === 2 && $letters[0] === 'A' && $letters[1] >= 'B' && $letters[1] < 'Z') {
+            return 'A'.chr(ord($letters[1]) + 1);
+        }
+
+        if ($letters === 'AZ') {
+            return 'BA';
+        }
+
+        if (strlen($letters) === 2 && $letters[0] === 'B' && $letters[1] >= 'A' && $letters[1] < 'Z') {
+            return 'B'.chr(ord($letters[1]) + 1);
+        }
+
+        if ($letters === 'BZ') {
+            return 'CA';
+        }
+
+        if (strlen($letters) === 2 && $letters[0] >= 'B' && $letters[0] < 'Z' && $letters[1] === 'Z') {
+            return chr(ord($letters[0]) + 1).'A';
+        }
+
+        if (strlen($letters) === 2 && $letters[1] < 'Z') {
+            return $letters[0].chr(ord($letters[1]) + 1);
+        }
+
+        throw new \RuntimeException("Order number prefix exhausted: {$letters}");
     }
 }

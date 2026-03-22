@@ -5,21 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\MediaLibrary\HasMedia;
-use Spatie\MediaLibrary\InteractsWithMedia;
 
-class MenuItem extends Model implements HasMedia
+class MenuItem extends Model
 {
-    use HasFactory, InteractsWithMedia, LogsActivity;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->useLogName('admin')
-            ->logOnly(['name', 'base_price', 'category_id', 'is_available'])
+            ->logOnly(['name', 'category_id', 'is_available'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }
@@ -30,17 +30,17 @@ class MenuItem extends Model implements HasMedia
         'name',
         'slug',
         'description',
-        'base_price',
         'is_available',
-        'is_popular',
+        'rating',
+        'rating_count',
     ];
 
     protected function casts(): array
     {
         return [
-            'base_price' => 'decimal:2',
             'is_available' => 'boolean',
-            'is_popular' => 'boolean',
+            'rating' => 'float',
+            'rating_count' => 'integer',
         ];
     }
 
@@ -54,9 +54,22 @@ class MenuItem extends Model implements HasMedia
         return $this->belongsTo(MenuCategory::class, 'category_id');
     }
 
-    public function sizes(): HasMany
+    public function options(): HasMany
     {
-        return $this->hasMany(MenuItemSize::class);
+        return $this->hasMany(MenuItemOption::class)->orderBy('display_order');
+    }
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(MenuTag::class, 'menu_item_menu_tag')->withTimestamps();
+    }
+
+    public function addOns(): BelongsToMany
+    {
+        return $this->belongsToMany(MenuAddOn::class, 'menu_item_menu_add_on')
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderByPivot('sort_order');
     }
 
     public function cartItems(): HasMany

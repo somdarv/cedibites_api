@@ -84,10 +84,16 @@ class EmployeeController extends Controller
                 $user->givePermissionTo($request->permissions);
             }
 
-            // Create employee with all fields
+            // Create employee with all fields — derive next number from the
+            // highest existing suffix inside the transaction to avoid races.
+            $maxNo = Employee::lockForUpdate()
+                ->where('employee_no', 'like', 'EMP%')
+                ->max(DB::raw('CAST(SUBSTRING(employee_no, 4) AS UNSIGNED)'));
+            $nextNo = 'EMP'.str_pad((int) $maxNo + 1, 5, '0', STR_PAD_LEFT);
+
             $employeeData = [
                 'user_id' => $user->id,
-                'employee_no' => 'EMP'.str_pad(Employee::count() + 1, 5, '0', STR_PAD_LEFT),
+                'employee_no' => $nextNo,
                 'hire_date' => $request->hire_date ?? now(),
                 'status' => $request->status ?? EmployeeStatus::Active->value,
             ];

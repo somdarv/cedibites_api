@@ -24,6 +24,7 @@ return new class extends Migration
             $table->dateTime('refunded_at')->nullable();
             $table->text('refund_reason')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index(['order_id', 'payment_status']);
         });

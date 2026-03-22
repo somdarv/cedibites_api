@@ -22,6 +22,7 @@ return new class extends Migration
             $table->decimal('longitude', 11, 8);
             $table->boolean('is_active')->default(true)->index();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         // Branch operating hours - normalized for flexibility
@@ -35,7 +36,7 @@ return new class extends Migration
             // Manual override - null means follow schedule, true/false overrides schedule for this day
             $table->boolean('manual_override_open')->nullable();
             // When the manual override was set (for automatic reset logic)
-            $table->timestamp('manual_override_at')->nullable();
+            $table->dateTime('manual_override_at')->nullable();
             $table->timestamps();
 
             $table->unique(['branch_id', 'day_of_week']);
@@ -50,8 +51,8 @@ return new class extends Migration
             $table->decimal('delivery_radius_km', 5, 2)->default(5.0);
             $table->decimal('min_order_value', 10, 2)->default(0.00);
             $table->string('estimated_delivery_time')->nullable(); // e.g., "30-45 mins"
-            $table->timestamp('effective_from')->nullable();
-            $table->timestamp('effective_until')->nullable();
+            $table->dateTime('effective_from')->nullable();
+            $table->dateTime('effective_until')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 

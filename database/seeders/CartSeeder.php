@@ -29,14 +29,14 @@ class CartSeeder extends Seeder
                 $menuItems = $branch->menuItems()->inRandomOrder()->limit(rand(1, 3))->get();
 
                 foreach ($menuItems as $menuItem) {
-                    $size = $menuItem->sizes()->inRandomOrder()->first();
+                    $option = $menuItem->options()->inRandomOrder()->first();
                     $quantity = rand(1, 2);
-                    $unitPrice = $size?->price ?? $menuItem->base_price ?? 50.00;
+                    $unitPrice = $option?->price ?? 50.00;
 
                     CartItem::create([
                         'cart_id' => $cart->id,
                         'menu_item_id' => $menuItem->id,
-                        'menu_item_size_id' => $size?->id,
+                        'menu_item_option_id' => $option?->id,
                         'quantity' => $quantity,
                         'unit_price' => $unitPrice,
                         'subtotal' => $quantity * $unitPrice,

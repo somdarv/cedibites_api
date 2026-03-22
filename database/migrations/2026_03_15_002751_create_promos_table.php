@@ -26,6 +26,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->string('accounting_code')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

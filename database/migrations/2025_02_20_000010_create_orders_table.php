@@ -37,6 +37,7 @@ return new class extends Migration
             $table->dateTime('cancelled_at')->nullable();
             $table->text('cancelled_reason')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index(['customer_id', 'created_at']);
             $table->index(['branch_id', 'status']);

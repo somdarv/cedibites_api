@@ -18,10 +18,11 @@ return new class extends Migration
             $table->string('name');
             $table->string('slug')->index();
             $table->text('description')->nullable();
-            $table->decimal('base_price', 10, 2)->nullable();
             $table->boolean('is_available')->default(true)->index();
-            $table->boolean('is_popular')->default(false)->index();
+            $table->decimal('rating', 3, 1)->nullable()->after('is_available');
+            $table->unsignedInteger('rating_count')->default(0)->after('rating');
             $table->timestamps();
+            $table->softDeletes();
             $table->unique(['branch_id', 'slug']);
         });
     }

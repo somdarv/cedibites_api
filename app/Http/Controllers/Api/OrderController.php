@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreOrderFromCartRequest;
 use App\Http\Requests\UpdateOrderRequest;
@@ -66,7 +67,7 @@ class OrderController extends Controller
     {
         $identity = $this->resolveCartIdentity($request);
 
-        $cartQuery = Cart::with(['items.menuItem', 'items.menuItemSize', 'branch'])
+        $cartQuery = Cart::with(['items.menuItem', 'items.menuItemOption', 'branch'])
             ->where('status', 'active');
 
         if ($identity['customer_id'] !== null) {
@@ -118,14 +119,29 @@ class OrderController extends Controller
             ]);
 
             foreach ($cart->items as $cartItem) {
+                $mi = $cartItem->menuItem;
+                $opt = $cartItem->menuItemOption;
+
                 OrderItem::create([
                     'order_id' => $order->id,
                     'menu_item_id' => $cartItem->menu_item_id,
-                    'menu_item_size_id' => $cartItem->menu_item_size_id,
+                    'menu_item_option_id' => $cartItem->menu_item_option_id,
                     'quantity' => $cartItem->quantity,
                     'unit_price' => $cartItem->unit_price,
                     'subtotal' => $cartItem->subtotal,
                     'special_instructions' => $cartItem->special_instructions,
+                    'menu_item_snapshot' => $mi ? [
+                        'id' => $mi->id,
+                        'name' => $mi->name,
+                        'description' => $mi->description,
+                    ] : null,
+                    'menu_item_option_snapshot' => $opt ? [
+                        'id' => $opt->id,
+                        'option_key' => $opt->option_key,
+                        'option_label' => $opt->option_label,
+                        'price' => (float) $opt->price,
+                        'image_url' => $opt->getFirstMediaUrl('menu-item-options') ?: null,
+                    ] : null,
                 ]);
             }
 
@@ -161,7 +177,7 @@ class OrderController extends Controller
      */
     public function showByNumber(string $orderNumber): JsonResponse
     {
-        $order = Order::with(['customer.user', 'branch', 'items.menuItem', 'items.menuItemSize', 'statusHistory', 'payments'])
+        $order = Order::with(['customer.user', 'branch', 'items.menuItem', 'items.menuItemOption.media', 'statusHistory', 'payments'])
             ->where('order_number', $orderNumber)
             ->first();
 
@@ -173,24 +189,35 @@ class OrderController extends Controller
     }
 
     /**
-     * Get orders for order manager display (public, no auth required).
-     * Returns in-progress orders: received, preparing, ready.
+     * Order manager feed. Authenticated employees see only their branches; optional branch_id must be allowed.
+     * Unauthenticated callers may filter by branch_id only (display boards).
      */
     public function orderManagerOrders(Request $request): JsonResponse
     {
         $branchId = $request->query('branch_id');
 
-        $query = Order::with(['branch', 'customer.user', 'items.menuItem', 'items.menuItemSize', 'statusHistory', 'payments'])
+        $query = Order::with(['branch', 'customer.user', 'items.menuItem', 'items.menuItemOption.media', 'statusHistory', 'payments'])
             ->whereIn('status', ['received', 'preparing', 'ready'])
             ->orderBy('created_at', 'asc');
 
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
+        $user = Auth::guard('sanctum')->user();
+        $employee = $user?->employee;
+
+        if ($employee && ! $user->hasAnyRole([Role::Admin, Role::SuperAdmin])) {
+            $allowed = $employee->branches()->pluck('branches.id');
+            $query->whereIn('branch_id', $allowed);
+            if ($branchId !== null && $branchId !== '') {
+                $bid = (int) $branchId;
+                if (! $allowed->contains($bid)) {
+                    return response()->json(['message' => 'You cannot view orders for this branch.'], 403);
+                }
+                $query->where('branch_id', $bid);
+            }
+        } elseif ($branchId !== null && $branchId !== '') {
+            $query->where('branch_id', (int) $branchId);
         }
 
-        $orders = $query->get();
-
-        return response()->success(OrderResource::collection($orders));
+        return response()->success(OrderResource::collection($query->get()));
     }
 
     /**
@@ -201,7 +228,7 @@ class OrderController extends Controller
     {
         $branchId = $request->query('branch_id');
 
-        $query = Order::with(['branch', 'items.menuItem', 'items.menuItemSize'])
+        $query = Order::with(['branch', 'items.menuItem', 'items.menuItemOption.media'])
             ->whereIn('status', ['received', 'accepted', 'preparing', 'ready'])
             ->orderBy('created_at', 'asc');
 

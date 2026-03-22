@@ -16,22 +16,19 @@ class MenuCategorySeeder extends Seeder
         $branches = Branch::all();
 
         $categories = [
-            ['name' => 'Basic Meals', 'display_order' => 1],
-            ['name' => 'Rice Dishes', 'display_order' => 2],
-            ['name' => 'Grilled Items', 'display_order' => 3],
-            ['name' => 'Soups & Stews', 'display_order' => 4],
-            ['name' => 'Drinks', 'display_order' => 5],
-            ['name' => 'Desserts', 'display_order' => 6],
-            ['name' => 'Snacks', 'display_order' => 7],
+            ['name' => 'Main delights', 'display_order' => 1],
+            ['name' => 'Meat bites', 'display_order' => 2],
+            ['name' => 'Combos', 'display_order' => 3],
+            ['name' => 'Soft bites', 'display_order' => 4],
         ];
 
         foreach ($branches as $branch) {
             foreach ($categories as $categoryData) {
                 MenuCategory::firstOrCreate([
                     'branch_id' => $branch->id,
-                    'name' => $categoryData['name'],
-                ], [
                     'slug' => \Str::slug($categoryData['name']),
+                ], [
+                    'name' => $categoryData['name'],
                     'display_order' => $categoryData['display_order'],
                     'is_active' => true,
                 ]);

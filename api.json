@@ -2528,7 +2528,7 @@
                     "menu_item_id": {
                         "type": "integer"
                     },
-                    "menu_item_size_id": {
+                    "menu_item_option_id": {
                         "type": [
                             "integer",
                             "null"
@@ -2605,18 +2605,20 @@
                             "null"
                         ]
                     },
-                    "base_price": {
-                        "type": [
-                            "number",
-                            "null"
-                        ],
-                        "minimum": 0
-                    },
                     "is_available": {
                         "type": "boolean"
                     },
-                    "is_popular": {
-                        "type": "boolean"
+                    "tag_ids": {
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "add_on_ids": {
+                        "type": [
+                            "array",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -2923,18 +2925,20 @@
                             "null"
                         ]
                     },
-                    "base_price": {
-                        "type": [
-                            "number",
-                            "null"
-                        ],
-                        "minimum": 0
-                    },
                     "is_available": {
                         "type": "boolean"
                     },
-                    "is_popular": {
-                        "type": "boolean"
+                    "tag_ids": {
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "add_on_ids": {
+                        "type": [
+                            "array",
+                            "null"
+                        ]
                     }
                 },
                 "title": "UpdateMenuItemRequest"

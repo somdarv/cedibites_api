@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\MenuTag;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\Importable;
@@ -37,12 +38,10 @@ class MenuItemsImport implements SkipsEmptyRows, SkipsOnError, SkipsOnFailure, T
     {
         foreach ($rows as $row) {
             try {
-                // Find or create category
                 $categoryId = null;
                 if (! empty($row['category'])) {
                     $categoryName = trim($row['category']);
 
-                    // Check if we've already created this category in this import
                     if (isset($this->createdCategories[$categoryName])) {
                         $categoryId = $this->createdCategories[$categoryName];
                     } else {
@@ -60,21 +59,34 @@ class MenuItemsImport implements SkipsEmptyRows, SkipsOnError, SkipsOnFailure, T
                     }
                 }
 
-                // Generate unique slug
                 $baseSlug = Str::slug($row['name']);
                 $slug = $baseSlug.'-'.time().'-'.uniqid();
 
-                // Create menu item
-                MenuItem::create([
+                $menuItem = MenuItem::create([
                     'branch_id' => $this->branchId,
                     'category_id' => $categoryId,
                     'name' => trim($row['name']),
                     'slug' => $slug,
                     'description' => ! empty($row['description']) ? trim($row['description']) : null,
-                    'base_price' => ! empty($row['price']) ? (float) $row['price'] : null,
                     'is_available' => $this->parseBoolean($row['is_available'] ?? 'true'),
-                    'is_popular' => $this->parseBoolean($row['is_popular'] ?? 'false'),
                 ]);
+
+                $price = ! empty($row['price']) ? (float) $row['price'] : 0;
+
+                $menuItem->options()->create([
+                    'option_key' => 'standard',
+                    'option_label' => 'Standard',
+                    'price' => $price,
+                    'display_order' => 0,
+                    'is_available' => true,
+                ]);
+
+                if ($this->parseBoolean($row['is_popular'] ?? 'false')) {
+                    $popular = MenuTag::query()->where('slug', 'popular')->first();
+                    if ($popular) {
+                        $menuItem->tags()->syncWithoutDetaching([$popular->id]);
+                    }
+                }
 
                 $this->imported++;
             } catch (\Exception $e) {
@@ -125,7 +137,7 @@ class MenuItemsImport implements SkipsEmptyRows, SkipsOnError, SkipsOnFailure, T
             return $value;
         }
 
-        $value = strtolower(trim($value));
+        $value = strtolower(trim((string) $value));
 
         return in_array($value, ['true', '1', 'yes', 'y'], true);
     }

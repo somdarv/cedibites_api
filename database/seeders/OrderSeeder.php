@@ -81,21 +81,24 @@ class OrderSeeder extends Seeder
         $menuItems = $branch->menuItems()->inRandomOrder()->limit(rand(2, 4))->get();
 
         foreach ($menuItems as $menuItem) {
-            $size = $menuItem->sizes()->inRandomOrder()->first();
+            $option = $menuItem->options()->inRandomOrder()->first();
             $quantity = rand(1, 3);
-            $unitPrice = $size?->price ?? $menuItem->base_price ?? 50.00;
+            $unitPrice = $option?->price ?? 50.00;
 
             OrderItem::create([
                 'order_id' => $order->id,
                 'menu_item_id' => $menuItem->id,
-                'menu_item_size_id' => $size?->id,
+                'menu_item_option_id' => $option?->id,
                 'menu_item_snapshot' => [
+                    'id' => $menuItem->id,
                     'name' => $menuItem->name,
                     'description' => $menuItem->description,
                 ],
-                'menu_item_size_snapshot' => $size ? [
-                    'name' => $size->name,
-                    'price' => $size->price,
+                'menu_item_option_snapshot' => $option ? [
+                    'id' => $option->id,
+                    'option_key' => $option->option_key,
+                    'option_label' => $option->option_label,
+                    'price' => (float) $option->price,
                 ] : null,
                 'quantity' => $quantity,
                 'unit_price' => $unitPrice,

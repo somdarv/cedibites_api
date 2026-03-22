@@ -15,14 +15,16 @@ return new class extends Migration
             $table->id();
             $table->foreignId('cart_id')->constrained('carts')->onDelete('cascade');
             $table->foreignId('menu_item_id')->constrained('menu_items')->onDelete('restrict');
-            $table->foreignId('menu_item_size_id')->nullable()->constrained('menu_item_sizes')->onDelete('set null');
+            $table->foreignId('menu_item_option_id')->nullable()->constrained('menu_item_options')->onDelete('set null');
             $table->integer('quantity')->default(1);
             $table->decimal('unit_price', 10, 2);
             $table->decimal('subtotal', 10, 2);
             $table->text('special_instructions')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index('cart_id');
+            $table->index(['cart_id', 'menu_item_id']);
         });
     }
 

@@ -41,7 +41,20 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * @param  array<string, mixed>  $itemAttributes
+ */
+function menuItemWithUnitPrice(\App\Models\Branch $branch, float $unitPrice, array $itemAttributes = []): \App\Models\MenuItem
 {
-    // ..
+    $item = \App\Models\MenuItem::factory()->create(array_merge($itemAttributes, [
+        'branch_id' => $branch->id,
+    ]));
+    $item->options()->first()?->update(['price' => $unitPrice]);
+
+    return $item->fresh(['options']);
+}
+
+function firstOptionUnitPrice(\App\Models\MenuItem $item): float
+{
+    return (float) $item->options()->orderBy('display_order')->first()->price;
 }
