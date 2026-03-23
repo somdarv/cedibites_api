@@ -89,7 +89,7 @@ class OrderController extends Controller
         }
         $branch = $cart->branch;
         $subtotal = $cart->items->sum('subtotal');
-        $deliveryFee = $validated['order_type'] === 'delivery' ? (float) ($branch->delivery_fee ?? 15) : 0;
+        $deliveryFee = 0; // Delivery fees temporarily disabled
         $taxAmount = round($subtotal * ($this->taxRate() / (1 + $this->taxRate())), 2);
         $totalAmount = $subtotal + $deliveryFee;
 

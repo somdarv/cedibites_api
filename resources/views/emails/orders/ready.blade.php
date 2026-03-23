@@ -6,7 +6,11 @@
     <h2 class="greeting">Hello {{ $order->customer->user->name }}</h2>
     
     <p class="message">
-        Great news! Your order is ready @if($order->order_type === 'pickup')for pickup@else and will be delivered soon@endif.
+        @if($order->order_type === 'pickup')
+            Great news! Your order is ready for pickup.
+        @else
+            Great news! Your order is ready and will be delivered soon.
+        @endif
     </p>
     
     <div class="order-box">
