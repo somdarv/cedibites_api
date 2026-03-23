@@ -1,7 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\EmployeeAuthController;
 use Illuminate\Support\Facades\Route;
+
+Route::prefix('employee')->middleware('throttle:5,1')->group(function () {
+    Route::post('forgot-password', [EmployeeAuthController::class, 'forgotPassword']);
+    Route::post('reset-password', [EmployeeAuthController::class, 'resetPassword']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('send-otp', [AuthController::class, 'sendOTP'])->middleware('throttle:otp-send');

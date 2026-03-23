@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\CustomerSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\SendOTPRequest;
@@ -236,7 +237,11 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse|Response
     {
-        $request->user()->tokens()->delete();
+        $user = $request->user();
+
+        CustomerSessionEvent::dispatch($user);
+
+        $user->tokens()->delete();
 
         return response()->deleted();
     }

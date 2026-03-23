@@ -3,16 +3,24 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\EmployeeStatus;
+use App\Events\StaffSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\EmployeeLoginRequest;
+use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\PosLoginRequest;
+use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Resources\EmployeeAuthResource;
 use App\Models\Employee;
+use App\Models\User;
+use App\Notifications\StaffPasswordResetNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class EmployeeAuthController extends Controller
 {
@@ -154,13 +162,101 @@ class EmployeeAuthController extends Controller
      */
     public function logout(Request $request): Response
     {
+        $user = $request->user();
+
         activity('auth')
-            ->causedBy($request->user())
+            ->causedBy($user)
             ->event('staff_logout')
             ->log('Staff logout');
 
-        $request->user()->tokens()->delete();
+        StaffSessionEvent::dispatch($user, 'session.revoked');
+
+        $user->tokens()->delete();
 
         return response()->deleted();
+    }
+
+    /**
+     * Send a password reset link to the staff member's phone (and email if present).
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $identifier = trim($request->string('identifier'));
+
+        $user = $this->findUserByIdentifier($identifier);
+
+        // Always return success to prevent user enumeration
+        if (! $user || ! $user->employee) {
+            return response()->success(['message' => 'If an account exists, you will receive a reset link shortly.']);
+        }
+
+        $token = Str::random(64);
+
+        DB::table('password_reset_tokens')->upsert(
+            [
+                'email' => $identifier,
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ],
+            uniqueBy: ['email'],
+            update: ['token', 'created_at'],
+        );
+
+        $resetLink = config('app.frontend_url').'/staff/reset-password?token='.urlencode($token).'&identifier='.urlencode($identifier);
+
+        $user->notify(new StaffPasswordResetNotification($resetLink));
+
+        return response()->success(['message' => 'If an account exists, you will receive a reset link shortly.']);
+    }
+
+    /**
+     * Reset the staff member's password using a valid token.
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $identifier = trim($request->string('identifier'));
+
+        $record = DB::table('password_reset_tokens')->where('email', $identifier)->first();
+
+        if (! $record || ! Hash::check($request->string('token'), $record->token)) {
+            return response()->json(['message' => 'This reset link is invalid or has already been used.'], 422);
+        }
+
+        if (Carbon::parse($record->created_at)->addHour()->isPast()) {
+            DB::table('password_reset_tokens')->where('email', $identifier)->delete();
+
+            return response()->json(['message' => 'This reset link has expired. Please request a new one.'], 422);
+        }
+
+        $user = $this->findUserByIdentifier($identifier);
+
+        if (! $user || ! $user->employee) {
+            return response()->json(['message' => 'This reset link is invalid or has already been used.'], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->string('password')),
+            'must_reset_password' => false,
+            'password_reset_required_at' => null,
+        ]);
+
+        DB::table('password_reset_tokens')->where('email', $identifier)->delete();
+
+        return response()->success(['message' => 'Password reset successfully. You can now log in.']);
+    }
+
+    /**
+     * Find a User by email or normalised Ghana phone number.
+     */
+    private function findUserByIdentifier(string $identifier): ?User
+    {
+        if (str_contains($identifier, '@')) {
+            return User::where('email', $identifier)->first();
+        }
+
+        $digits = preg_replace('/\D/', '', $identifier);
+        $phone = str_starts_with($digits, '233') ? $digits : '233'.ltrim($digits, '0');
+
+        return User::where('phone', $phone)->orWhere('phone', $identifier)->first();
     }
 }
