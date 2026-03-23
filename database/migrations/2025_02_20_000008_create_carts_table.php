@@ -18,7 +18,9 @@ return new class extends Migration
             $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
             $table->enum('status', ['active', 'completed', 'abandoned'])->default('active')->index();
             $table->timestamps();
+            $table->softDeletes();
 
+            $table->index('branch_id');
             $table->index(['customer_id', 'status']);
             $table->index(['session_id', 'status']);
         });

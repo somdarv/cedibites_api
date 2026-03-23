@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePosOrderRequest;
+use App\Models\MenuItem;
+use App\Models\MenuItemOption;
 use App\Services\HubtelPaymentService;
 use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 
 class PosOrderController extends Controller
 {
@@ -95,27 +98,24 @@ class PosOrderController extends Controller
 
                 // Create order items
                 foreach ($items as $item) {
-                    $menuItem = $menuItems[$item['menu_item_id']];
-                    $menuItemSize = null;
+                    $menuItem = $menuItems->get($item['menu_item_id']);
+                    $menuItemOption = null;
 
-                    // Get menu item size if provided
-                    if (isset($item['menu_item_size_id']) && $item['menu_item_size_id'] !== null) {
-                        $menuItemSize = \App\Models\MenuItemSize::find($item['menu_item_size_id']);
+                    if (isset($item['menu_item_option_id']) && $item['menu_item_option_id'] !== null) {
+                        $menuItemOption = MenuItemOption::find($item['menu_item_option_id']);
                     }
 
-                    // Create snapshots
-                    $snapshots = $this->createOrderSnapshots($menuItem, $menuItemSize);
+                    $snapshots = $this->createOrderSnapshots($menuItem, $menuItemOption);
 
-                    // Create order item using DB-authoritative unit_price
                     \App\Models\OrderItem::create([
                         'order_id' => $order->id,
                         'menu_item_id' => $item['menu_item_id'],
-                        'menu_item_size_id' => $item['menu_item_size_id'] ?? null,
+                        'menu_item_option_id' => $item['menu_item_option_id'] ?? null,
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
                         'subtotal' => $item['quantity'] * $item['unit_price'],
-                        'menu_item_snapshot' => json_encode($snapshots['menu_item_snapshot']),
-                        'menu_item_size_snapshot' => $snapshots['menu_item_size_snapshot'] ? json_encode($snapshots['menu_item_size_snapshot']) : null,
+                        'menu_item_snapshot' => $snapshots['menu_item_snapshot'],
+                        'menu_item_option_snapshot' => $snapshots['menu_item_option_snapshot'],
                     ]);
                 }
 
@@ -192,7 +192,7 @@ class PosOrderController extends Controller
             });
 
             // Load relationships for response
-            $order->load(['branch', 'assignedEmployee.user', 'items.menuItem', 'items.menuItemSize', 'payments']);
+            $order->load(['branch', 'assignedEmployee.user', 'items.menuItem', 'items.menuItemOption.media', 'payments']);
 
             // For mobile money, include payment ID so the frontend can poll for status
             $responseData = ['data' => $order];
@@ -278,18 +278,21 @@ class PosOrderController extends Controller
      *
      * @param  array  $items  The items array from the request
      * @param  int  $branchId  The branch ID to validate against
-     * @return array Array of MenuItem models keyed by ID
+     * @return \Illuminate\Support\Collection<int, \App\Models\MenuItem>
      *
      * @throws \Illuminate\Http\Exceptions\HttpResponseException
      */
-    private function validateMenuItems(array $items, int $branchId): array
+    private function validateMenuItems(array $items, int $branchId): Collection
     {
         // Extract all menu_item_id values
         $menuItemIds = array_column($items, 'menu_item_id');
 
         // Fetch all menu items at once
-        $menuItems = \App\Models\MenuItem::whereIn('id', $menuItemIds)
-            ->with('branch')
+        $menuItems = MenuItem::whereIn('id', $menuItemIds)
+            ->with([
+                'branch',
+                'options' => fn ($q) => $q->orderBy('display_order'),
+            ])
             ->get()
             ->keyBy('id');
 
@@ -315,36 +318,33 @@ class PosOrderController extends Controller
             }
         }
 
-        // Validate menu item sizes for items that have them
         foreach ($items as $item) {
-            if (isset($item['menu_item_size_id']) && $item['menu_item_size_id'] !== null) {
-                $menuItemSizeId = $item['menu_item_size_id'];
+            if (isset($item['menu_item_option_id']) && $item['menu_item_option_id'] !== null) {
+                $optionId = $item['menu_item_option_id'];
                 $menuItemId = $item['menu_item_id'];
 
-                // Fetch the size and verify it exists
-                $menuItemSize = \App\Models\MenuItemSize::find($menuItemSizeId);
+                $option = MenuItemOption::find($optionId);
 
-                if (! $menuItemSize) {
+                if (! $option) {
                     throw new \Illuminate\Http\Exceptions\HttpResponseException(
                         response()->json([
-                            'message' => 'Invalid menu item size',
+                            'message' => 'Invalid menu item option',
                         ], 422)
                     );
                 }
 
-                // Verify the size belongs to the menu item
-                if ($menuItemSize->menu_item_id !== $menuItemId) {
+                if ($option->menu_item_id !== $menuItemId) {
                     $menuItem = $menuItems->get($menuItemId);
                     throw new \Illuminate\Http\Exceptions\HttpResponseException(
                         response()->json([
-                            'message' => "The selected size does not belong to menu item {$menuItem->name}",
+                            'message' => "The selected option does not belong to menu item {$menuItem->name}",
                         ], 422)
                     );
                 }
             }
         }
 
-        return $menuItems->toArray();
+        return $menuItems;
     }
 
     /**
@@ -355,22 +355,27 @@ class PosOrderController extends Controller
      * @param  array  $menuItems  MenuItem arrays keyed by ID (from validateMenuItems)
      * @return array Items with unit_price set to the DB-authoritative value
      */
-    private function resolveItemPrices(array $items, array $menuItems): array
+    private function resolveItemPrices(array $items, Collection $menuItems): array
     {
         return array_map(function (array $item) use ($menuItems): array {
-            $menuItemId = $item['menu_item_id'];
+            $menuItemId = (int) $item['menu_item_id'];
+            $menuItem = $menuItems->get($menuItemId);
 
-            if (isset($item['menu_item_size_id']) && $item['menu_item_size_id'] !== null) {
-                $size = \App\Models\MenuItemSize::find($item['menu_item_size_id']);
-                if ($size) {
-                    $item['unit_price'] = (float) $size->price;
+            if (! empty($item['menu_item_option_id'])) {
+                $option = MenuItemOption::find($item['menu_item_option_id']);
+                if ($option && $option->menu_item_id === $menuItemId) {
+                    $item['unit_price'] = (float) $option->price;
 
                     return $item;
                 }
             }
 
-            if (isset($menuItems[$menuItemId])) {
-                $item['unit_price'] = (float) $menuItems[$menuItemId]['base_price'];
+            if ($menuItem) {
+                $first = $menuItem->options->first();
+                if ($first) {
+                    $item['unit_price'] = (float) $first->price;
+                    $item['menu_item_option_id'] = $first->id;
+                }
             }
 
             return $item;
@@ -413,9 +418,7 @@ class PosOrderController extends Controller
     }
 
     /**
-     * Generate a unique order number in format "CB" + 6 digits.
-     *
-     * @return string Unique order number
+     * @return string Unique order number (A001-style series)
      */
     private function generateOrderNumber(): string
     {
@@ -423,39 +426,30 @@ class PosOrderController extends Controller
     }
 
     /**
-     * Create snapshots of menu item and size for order item preservation.
-     *
-     * @param  array|object  $menuItem  The menu item to snapshot (can be array or model)
-     * @param  \App\Models\MenuItemSize|null  $size  The menu item size to snapshot (if applicable)
-     * @return array Associative array with menu_item_snapshot and menu_item_size_snapshot
+     * @return array{menu_item_snapshot: array<string, mixed>, menu_item_option_snapshot: array<string, mixed>|null}
      */
-    private function createOrderSnapshots($menuItem, $size): array
+    private function createOrderSnapshots(MenuItem $menuItem, ?MenuItemOption $option): array
     {
-        // Handle both array and object formats for menu item
-        $menuItemData = is_array($menuItem) ? $menuItem : $menuItem->toArray();
-
-        // Create menu item snapshot with required fields
         $menuItemSnapshot = [
-            'id' => $menuItemData['id'],
-            'name' => $menuItemData['name'],
-            'description' => $menuItemData['description'],
-            'base_price' => $menuItemData['base_price'],
-            'image_url' => $menuItemData['image_url'] ?? null,
+            'id' => $menuItem->id,
+            'name' => $menuItem->name,
+            'description' => $menuItem->description,
         ];
 
-        // Create size snapshot if size is provided
-        $menuItemSizeSnapshot = null;
-        if ($size !== null) {
-            $menuItemSizeSnapshot = [
-                'id' => $size->id,
-                'size_name' => $size->name,
-                'price' => $size->price,
+        $menuItemOptionSnapshot = null;
+        if ($option !== null) {
+            $menuItemOptionSnapshot = [
+                'id' => $option->id,
+                'option_key' => $option->option_key,
+                'option_label' => $option->option_label,
+                'price' => (float) $option->price,
+                'image_url' => $option->getFirstMediaUrl('menu-item-options') ?: null,
             ];
         }
 
         return [
             'menu_item_snapshot' => $menuItemSnapshot,
-            'menu_item_size_snapshot' => $menuItemSizeSnapshot,
+            'menu_item_option_snapshot' => $menuItemOptionSnapshot,
         ];
     }
 }

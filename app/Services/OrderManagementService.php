@@ -16,7 +16,7 @@ class OrderManagementService
         $employee = $user->employee;
         $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
 
-        $query = Order::with(['customer.user', 'items.menuItemSize.menuItem', 'payments', 'branch', 'statusHistory']);
+        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory']);
 
         $employeeBranchIds = $employee?->branches()->pluck('branches.id');
 
@@ -29,7 +29,11 @@ class OrderManagementService
         }
 
         if (! empty($filters['branch_id'])) {
-            $query->where('branch_id', $filters['branch_id']);
+            $bid = (int) $filters['branch_id'];
+            if (! $canSeeAllOrders && $employee && ! $employee->branches()->where('branches.id', $bid)->exists()) {
+                return Order::query()->whereRaw('1 = 0');
+            }
+            $query->where('branch_id', $bid);
         }
 
         if (! empty($filters['branch_name'])) {
@@ -175,7 +179,7 @@ class OrderManagementService
             return Order::query()->whereRaw('1 = 0');
         }
 
-        return Order::with(['customer.user', 'items.menuItemSize.menuItem', 'branch'])
+        return Order::with(['customer.user', 'items.menuItemOption.menuItem', 'branch'])
             ->whereIn('branch_id', $branchIds)
             ->whereIn('status', ['received', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'])
             ->latest();

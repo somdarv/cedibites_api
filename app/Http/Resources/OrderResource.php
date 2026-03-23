@@ -29,6 +29,7 @@ class OrderResource extends JsonResource
             'contact_phone' => $this->contact_phone,
             'delivery_address' => $this->delivery_address,
             'delivery_note' => $this->delivery_note,
+            'branch_id' => $this->branch_id,
             'branch' => [
                 'id' => $this->branch?->id,
                 'name' => $this->branch?->name ?? '—',
@@ -40,7 +41,7 @@ class OrderResource extends JsonResource
             'items' => $this->items->map(fn ($item) => [
                 'id' => $item->id,
                 'menu_item_id' => $item->menu_item_id,
-                'menu_item_size_id' => $item->menu_item_size_id,
+                'menu_item_option_id' => $item->menu_item_option_id,
                 'quantity' => $item->quantity,
                 'unit_price' => (float) $item->unit_price,
                 'subtotal' => (float) $item->subtotal,
@@ -50,11 +51,13 @@ class OrderResource extends JsonResource
                     'name' => $item->menuItem?->name,
                     'category' => $item->menuItem?->category?->name,
                 ],
-                'size' => $item->menuItemSize ? [
-                    'id' => $item->menuItemSize->id,
-                    'size_key' => $item->menuItemSize->size_key,
-                    'size_label' => $item->menuItemSize->size_label,
+                'option' => $item->menuItemOption ? [
+                    'id' => $item->menuItemOption->id,
+                    'option_key' => $item->menuItemOption->option_key,
+                    'option_label' => $item->menuItemOption->option_label,
+                    'image_url' => $item->menuItemOption->getFirstMediaUrl('menu-item-options') ?: null,
                 ] : null,
+                'option_snapshot' => $item->menu_item_option_snapshot,
             ]),
             'customer' => $this->customer ? [
                 'id' => $this->customer->id,

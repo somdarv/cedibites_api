@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -28,6 +29,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Register Order observer
         \App\Models\Order::observe(\App\Observers\OrderObserver::class);
+
+        // Register broadcasting auth under the v1 prefix with Sanctum middleware
+        Broadcast::routes(['prefix' => 'v1', 'middleware' => ['auth:sanctum']]);
 
         // Register Payment observer
         \App\Models\Payment::observe(\App\Observers\PaymentObserver::class);

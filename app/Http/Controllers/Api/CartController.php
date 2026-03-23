@@ -41,7 +41,7 @@ class CartController extends Controller
     {
         $identity = $this->resolveCartIdentity($request);
 
-        $query = Cart::with(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize', 'branch'])
+        $query = Cart::with(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media', 'branch'])
             ->where('status', 'active');
 
         if ($identity['customer_id'] !== null) {
@@ -120,7 +120,7 @@ class CartController extends Controller
 
             $existingItem = CartItem::where('cart_id', $cart->id)
                 ->where('menu_item_id', $validated['menu_item_id'])
-                ->where('menu_item_size_id', $validated['menu_item_size_id'] ?? null)
+                ->where('menu_item_option_id', $validated['menu_item_option_id'] ?? null)
                 ->first();
 
             if ($existingItem) {
@@ -135,7 +135,7 @@ class CartController extends Controller
                 CartItem::create([
                     'cart_id' => $cart->id,
                     'menu_item_id' => $validated['menu_item_id'],
-                    'menu_item_size_id' => $validated['menu_item_size_id'] ?? null,
+                    'menu_item_option_id' => $validated['menu_item_option_id'] ?? null,
                     'quantity' => $validated['quantity'],
                     'unit_price' => $validated['unit_price'],
                     'subtotal' => $subtotal,
@@ -143,7 +143,7 @@ class CartController extends Controller
                 ]);
             }
 
-            $cart = $cart->fresh(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize', 'branch']);
+            $cart = $cart->fresh(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media', 'branch']);
             $cart->subtotal = $cart->items->sum('subtotal');
 
             $response = response()->created(new CartResource($cart));
@@ -175,7 +175,7 @@ class CartController extends Controller
                 'subtotal' => $cartItem->unit_price * $validated['quantity'],
             ]);
 
-            $cart = $cartItem->cart->load(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize', 'branch']);
+            $cart = $cartItem->cart->load(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media', 'branch']);
             $cart->subtotal = $cart->items->sum('subtotal');
 
             return response()->success(new CartResource($cart));
@@ -197,7 +197,7 @@ class CartController extends Controller
             $cart = $cartItem->cart;
             $cartItem->delete();
 
-            $cart = $cart->fresh(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize', 'branch']);
+            $cart = $cart->fresh(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media', 'branch']);
             if ($cart && $cart->items->count() > 0) {
                 $cart->subtotal = $cart->items->sum('subtotal');
 
@@ -226,7 +226,7 @@ class CartController extends Controller
         try {
             DB::beginTransaction();
 
-            $guestCarts = Cart::with(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize'])
+            $guestCarts = Cart::with(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media'])
                 ->where('session_id', $guestSessionId)
                 ->whereNull('customer_id')
                 ->where('status', 'active')
@@ -247,7 +247,7 @@ class CartController extends Controller
                     foreach ($guestCart->items as $guestItem) {
                         $existing = CartItem::where('cart_id', $customerCart->id)
                             ->where('menu_item_id', $guestItem->menu_item_id)
-                            ->where('menu_item_size_id', $guestItem->menu_item_size_id)
+                            ->where('menu_item_option_id', $guestItem->menu_item_option_id)
                             ->first();
 
                         if ($existing) {
@@ -260,7 +260,7 @@ class CartController extends Controller
                             CartItem::create([
                                 'cart_id' => $customerCart->id,
                                 'menu_item_id' => $guestItem->menu_item_id,
-                                'menu_item_size_id' => $guestItem->menu_item_size_id,
+                                'menu_item_option_id' => $guestItem->menu_item_option_id,
                                 'quantity' => $guestItem->quantity,
                                 'unit_price' => $guestItem->unit_price,
                                 'subtotal' => $guestItem->subtotal,
@@ -285,7 +285,7 @@ class CartController extends Controller
                     ->log('Guest cart claimed');
             }
 
-            $cart = Cart::with(['items.menuItem.sizes', 'items.menuItem.category', 'items.menuItemSize', 'branch'])
+            $cart = Cart::with(['items.menuItem.options', 'items.menuItem.category', 'items.menuItemOption.media', 'branch'])
                 ->where('customer_id', $customerId)
                 ->where('status', 'active')
                 ->first();

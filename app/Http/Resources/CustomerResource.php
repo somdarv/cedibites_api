@@ -26,8 +26,8 @@ class CustomerResource extends JsonResource
         // Get the most ordered menu item
         $mostOrderedItem = $this->orders()
             ->join('order_items', 'orders.id', '=', 'order_items.order_id')
-            ->join('menu_item_sizes', 'order_items.menu_item_size_id', '=', 'menu_item_sizes.id')
-            ->join('menu_items', 'menu_item_sizes.menu_item_id', '=', 'menu_items.id')
+            ->join('menu_item_options', 'order_items.menu_item_option_id', '=', 'menu_item_options.id')
+            ->join('menu_items', 'menu_item_options.menu_item_id', '=', 'menu_items.id')
             ->selectRaw('menu_items.name, SUM(order_items.quantity) as total_quantity')
             ->groupBy('menu_items.id', 'menu_items.name')
             ->orderByDesc('total_quantity')

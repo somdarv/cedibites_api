@@ -8,25 +8,36 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class MenuItemResource extends JsonResource
 {
     /**
-     * Transform the resource into an array.
-     *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
-        $data = parent::toArray($request);
-        
-        // Add image_url from media library
-        $data['image_url'] = $this->getFirstMediaUrl('menu-items') ?: null;
-        
-        // Add is_new field (items created in the last 7 days)
-        $data['is_new'] = $this->created_at->isAfter(now()->subDays(7));
-        
-        // Transform sizes using MenuItemSizeResource
-        if (isset($data['sizes'])) {
-            $data['sizes'] = MenuItemSizeResource::collection($this->sizes);
-        }
-        
-        return $data;
+        $firstOption = $this->relationLoaded('options')
+            ? $this->options->sortBy('display_order')->first()
+            : null;
+
+        return [
+            'id' => $this->id,
+            'branch_id' => $this->branch_id,
+            'category_id' => $this->category_id,
+            'name' => $this->name,
+            'slug' => $this->slug,
+            'description' => $this->description,
+            'is_available' => $this->is_available,
+            'rating' => $this->rating,
+            'rating_count' => $this->rating_count,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+            'branch' => $this->whenLoaded('branch', fn () => new BranchResource($this->branch)),
+            'category' => $this->whenLoaded('category', fn () => new MenuCategoryResource($this->category)),
+            'image_url' => $firstOption?->getFirstMediaUrl('menu-item-options') ?: null,
+            'is_new' => $this->created_at->isAfter(now()->subDays(7)),
+            'popular' => $this->relationLoaded('tags')
+                ? $this->tags->contains('slug', 'popular')
+                : $this->tags()->where('slug', 'popular')->exists(),
+            'options' => MenuItemOptionResource::collection($this->whenLoaded('options')),
+            'tags' => MenuTagResource::collection($this->whenLoaded('tags')),
+            'add_ons' => MenuAddOnResource::collection($this->whenLoaded('addOns')),
+        ];
     }
 }

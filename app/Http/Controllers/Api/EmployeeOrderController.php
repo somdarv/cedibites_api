@@ -84,7 +84,7 @@ class EmployeeOrderController extends Controller
         );
 
         return response()->success(
-            new OrderResource($updatedOrder->load(['customer.user', 'items.menuItemSize.menuItem', 'payments'])),
+            new OrderResource($updatedOrder->load(['customer.user', 'items.menuItemOption.menuItem', 'items.menuItemOption.media', 'payments'])),
             'Order status updated successfully.'
         );
     }

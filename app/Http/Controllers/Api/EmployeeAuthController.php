@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class EmployeeAuthController extends Controller
 {
@@ -95,7 +96,7 @@ class EmployeeAuthController extends Controller
             'role' => $role,
             'branch' => $firstBranch?->name ?? '',
             'branchId' => (string) ($firstBranch?->id ?? ''),
-            'branchIds' => $employee->branches->pluck('id')->values()->all(),
+            'branchIds' => $employee->branches->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
         ];
 
         activity('auth')
@@ -109,6 +110,43 @@ class EmployeeAuthController extends Controller
             'token' => $token,
             'user' => $staffUser,
         ]);
+    }
+
+    /**
+     * Return the currently authenticated employee's profile.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        $user = $request->user()->load(['employee.branches', 'roles', 'permissions']);
+
+        return response()->success([
+            'user' => new EmployeeAuthResource($user),
+        ]);
+    }
+
+    /**
+     * Change password and clear the must_reset_password flag.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = $request->user();
+
+        if (! Hash::check($request->current_password, $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->password),
+            'must_reset_password' => false,
+            'password_reset_required_at' => null,
+        ]);
+
+        return response()->json(['message' => 'Password changed successfully.']);
     }
 
     /**

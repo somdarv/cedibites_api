@@ -7,9 +7,12 @@ use App\Http\Controllers\Api\AdminReportController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\MenuAddOnController;
 use App\Http\Controllers\Api\MenuCategoryController;
+use App\Http\Controllers\Api\MenuItemBranchOptionController;
 use App\Http\Controllers\Api\MenuItemController;
-use App\Http\Controllers\Api\MenuItemSizeController;
+use App\Http\Controllers\Api\MenuItemOptionController;
+use App\Http\Controllers\Api\MenuTagController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RoleController;
 use Illuminate\Support\Facades\Route;
@@ -72,19 +75,23 @@ Route::prefix('admin')->group(function () {
     });
 
     Route::middleware('permission:manage_menu')->group(function () {
+        Route::apiResource('menu-tags', MenuTagController::class);
+        Route::apiResource('menu-add-ons', MenuAddOnController::class);
+
         Route::post('menu-items', [MenuItemController::class, 'store']);
         Route::post('menu-items/bulk-import-preview', [MenuItemController::class, 'bulkImportPreview']);
         Route::post('menu-items/bulk-import', [MenuItemController::class, 'bulkImport']);
         Route::patch('menu-items/{menuItem}', [MenuItemController::class, 'update']);
-        Route::post('menu-items/{menuItem}/image', [MenuItemController::class, 'uploadImage']);
         Route::delete('menu-items/{menuItem}', [MenuItemController::class, 'destroy']);
+        Route::get('menu-items/{menuItem}/branch-overrides', [MenuItemBranchOptionController::class, 'show']);
+        Route::put('menu-items/{menuItem}/branch-options', [MenuItemBranchOptionController::class, 'update']);
 
-        // Menu item sizes
-        Route::get('menu-items/{menuItem}/sizes', [MenuItemSizeController::class, 'index']);
-        Route::post('menu-items/{menuItem}/sizes', [MenuItemSizeController::class, 'store']);
-        Route::get('menu-items/{menuItem}/sizes/{size}', [MenuItemSizeController::class, 'show']);
-        Route::patch('menu-items/{menuItem}/sizes/{size}', [MenuItemSizeController::class, 'update']);
-        Route::delete('menu-items/{menuItem}/sizes/{size}', [MenuItemSizeController::class, 'destroy']);
+        Route::get('menu-items/{menuItem}/options', [MenuItemOptionController::class, 'index']);
+        Route::post('menu-items/{menuItem}/options', [MenuItemOptionController::class, 'store']);
+        Route::get('menu-items/{menuItem}/options/{option}', [MenuItemOptionController::class, 'show']);
+        Route::patch('menu-items/{menuItem}/options/{option}', [MenuItemOptionController::class, 'update']);
+        Route::delete('menu-items/{menuItem}/options/{option}', [MenuItemOptionController::class, 'destroy']);
+        Route::post('menu-items/{menuItem}/options/{option}/image', [MenuItemOptionController::class, 'uploadImage']);
     });
 
     Route::middleware('permission:view_orders')->group(function () {

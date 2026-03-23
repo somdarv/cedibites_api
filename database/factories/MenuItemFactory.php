@@ -4,9 +4,14 @@ namespace Database\Factories;
 
 use App\Models\Branch;
 use App\Models\MenuCategory;
+use App\Models\MenuItem;
+use App\Models\MenuItemOption;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
+/**
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\MenuItem>
+ */
 class MenuItemFactory extends Factory
 {
     public function definition(): array
@@ -26,11 +31,27 @@ class MenuItemFactory extends Factory
             'branch_id' => Branch::factory(),
             'category_id' => MenuCategory::factory(),
             'name' => $name,
-            'slug' => Str::slug($name),
+            'slug' => Str::slug($name).'-'.fake()->unique()->numerify('####'),
             'description' => fake()->sentence(),
-            'base_price' => fake()->optional(0.5)->randomFloat(2, 20, 100),
             'is_available' => true,
-            'is_popular' => fake()->boolean(30),
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterCreating(function (MenuItem $item): void {
+            if ($item->options()->exists()) {
+                return;
+            }
+
+            MenuItemOption::create([
+                'menu_item_id' => $item->id,
+                'option_key' => 'standard',
+                'option_label' => 'Standard',
+                'price' => fake()->randomFloat(2, 10, 100),
+                'display_order' => 0,
+                'is_available' => true,
+            ]);
+        });
     }
 }

@@ -5,9 +5,10 @@ namespace App\Http\Resources;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Employee;
+use App\Models\MenuAddOn;
 use App\Models\MenuCategory;
-use App\Models\MenuConfig;
 use App\Models\MenuItem;
+use App\Models\MenuTag;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Promo;
@@ -24,7 +25,8 @@ class ActivityLogResource extends JsonResource
         Branch::class => 'branch',
         MenuItem::class => 'menu',
         MenuCategory::class => 'menu',
-        MenuConfig::class => 'menu',
+        MenuTag::class => 'menu',
+        MenuAddOn::class => 'menu',
         Promo::class => 'menu',
         User::class => 'staff',
         Employee::class => 'staff',

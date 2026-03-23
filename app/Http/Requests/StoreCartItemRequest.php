@@ -24,7 +24,7 @@ class StoreCartItemRequest extends FormRequest
         return [
             'branch_id' => ['required', 'exists:branches,id'],
             'menu_item_id' => ['required', 'exists:menu_items,id'],
-            'menu_item_size_id' => ['nullable', 'exists:menu_item_sizes,id'],
+            'menu_item_option_id' => ['nullable', 'exists:menu_item_options,id'],
             'quantity' => ['required', 'integer', 'min:1'],
             'unit_price' => ['required', 'numeric', 'min:0'],
             'special_instructions' => ['nullable', 'string'],
@@ -43,7 +43,7 @@ class StoreCartItemRequest extends FormRequest
             'branch_id.exists' => 'Selected branch does not exist',
             'menu_item_id.required' => 'Menu item is required',
             'menu_item_id.exists' => 'Selected menu item does not exist',
-            'menu_item_size_id.exists' => 'Selected menu item size does not exist',
+            'menu_item_option_id.exists' => 'Selected menu item option does not exist',
             'quantity.required' => 'Quantity is required',
             'quantity.integer' => 'Quantity must be a number',
             'quantity.min' => 'Quantity must be at least 1',

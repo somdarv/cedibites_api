@@ -74,6 +74,7 @@ class EmployeeController extends Controller
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($password),
+                'must_reset_password' => true,
             ]);
 
             // Assign role
@@ -84,10 +85,18 @@ class EmployeeController extends Controller
                 $user->givePermissionTo($request->permissions);
             }
 
-            // Create employee with all fields
+            // Create employee with all fields — derive next number from the
+            // highest existing suffix inside the transaction to avoid races.
+            $maxNo = Employee::lockForUpdate()
+                ->where('employee_no', 'like', 'EMP%')
+                ->pluck('employee_no')
+                ->map(fn (string $no) => (int) substr($no, 3))
+                ->max() ?? 0;
+            $nextNo = 'EMP'.str_pad((int) $maxNo + 1, 5, '0', STR_PAD_LEFT);
+
             $employeeData = [
                 'user_id' => $user->id,
-                'employee_no' => 'EMP'.str_pad(Employee::count() + 1, 5, '0', STR_PAD_LEFT),
+                'employee_no' => $nextNo,
                 'hire_date' => $request->hire_date ?? now(),
                 'status' => $request->status ?? EmployeeStatus::Active->value,
             ];

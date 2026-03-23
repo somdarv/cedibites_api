@@ -3,7 +3,6 @@
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\EmployeeAuthController;
 use App\Http\Controllers\Api\MenuCategoryController;
-use App\Http\Controllers\Api\MenuConfigController;
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PromoController;
@@ -24,10 +23,3 @@ Route::get('menu-items', [MenuItemController::class, 'index']);
 Route::get('menu-items/{menuItem}', [MenuItemController::class, 'show']);
 Route::get('orders/by-number/{orderNumber}', [OrderController::class, 'showByNumber']);
 Route::post('promos/resolve', [PromoController::class, 'resolve']);
-Route::get('menu-config', [MenuConfigController::class, 'show']);
-
-// Kitchen Display - Public endpoint
-Route::get('kitchen/orders', [OrderController::class, 'kitchenOrders']);
-
-// Order Manager Display - Public endpoint
-Route::get('order-manager/orders', [OrderController::class, 'orderManagerOrders']);

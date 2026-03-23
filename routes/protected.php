@@ -1,9 +1,14 @@
 <?php
 
-use App\Http\Controllers\Api\MenuConfigController;
+use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('menu-items/{menuItem}/rate', [MenuItemController::class, 'rate']);
+
+Route::get('kitchen/orders', [OrderController::class, 'kitchenOrders']);
+Route::get('order-manager/orders', [OrderController::class, 'orderManagerOrders']);
 
 Route::get('orders', [OrderController::class, 'index']);
 Route::get('orders/{order}', [OrderController::class, 'show']);
@@ -17,6 +22,3 @@ Route::get('notifications/unread-count', [NotificationController::class, 'unread
 Route::post('notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
 Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
 Route::delete('notifications/{id}', [NotificationController::class, 'destroy']);
-
-Route::put('menu-config', [MenuConfigController::class, 'update'])
-    ->middleware('permission:manage_menu');

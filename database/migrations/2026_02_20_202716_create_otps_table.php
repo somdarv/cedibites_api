@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('phone', 20)->index();
             $table->string('otp', 6);
-            $table->timestamp('expires_at')->index();
+            $table->dateTime('expires_at')->index();
             $table->boolean('verified')->default(false);
             $table->ipAddress('ip_address')->nullable();
             $table->timestamps();

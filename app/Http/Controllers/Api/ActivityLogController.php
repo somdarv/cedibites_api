@@ -22,7 +22,7 @@ class ActivityLogController extends Controller
         'order' => [Order::class, Payment::class],
         'staff' => [User::class, Employee::class],
         'branch' => [Branch::class],
-        'menu' => [MenuItem::class, MenuCategory::class, \App\Models\Promo::class, \App\Models\MenuConfig::class],
+        'menu' => [MenuItem::class, MenuCategory::class, \App\Models\Promo::class, \App\Models\MenuTag::class, \App\Models\MenuAddOn::class],
         'customer' => [Customer::class],
         'system' => [\App\Models\Shift::class],
     ];

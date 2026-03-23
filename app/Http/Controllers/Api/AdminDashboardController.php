@@ -22,7 +22,7 @@ class AdminDashboardController extends Controller
         $todayOrders = Order::whereDate('created_at', $today);
         $completedToday = (clone $todayOrders)->whereIn('status', ['completed', 'delivered']);
         $cancelledToday = (clone $todayOrders)->where('status', 'cancelled');
-        $activeNow = (clone $todayOrders)->whereIn('status', $activeStatuses);
+        $activeNow = Order::whereIn('status', $activeStatuses);
 
         $revenueToday = round($completedToday->sum('total_amount'), 2);
         $ordersToday = $todayOrders->count();
