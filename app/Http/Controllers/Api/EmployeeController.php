@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\EmployeeStatus;
+use App\Events\StaffSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
@@ -222,6 +223,9 @@ class EmployeeController extends Controller
 
             DB::commit();
 
+            $freshUser = $employee->fresh(['user.employee.branches', 'user.roles', 'user.permissions'])->user;
+            StaffSessionEvent::dispatch($freshUser, 'user.updated');
+
             return response()->success(
                 new EmployeeResource($employee->fresh(['user.roles.permissions', 'user.permissions', 'branches'])),
                 'Employee updated successfully.'
@@ -249,6 +253,8 @@ class EmployeeController extends Controller
      */
     public function forceLogout(Employee $employee): JsonResponse
     {
+        StaffSessionEvent::dispatch($employee->user, 'session.revoked');
+
         $employee->user->tokens()->delete();
 
         activity('admin')

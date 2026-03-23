@@ -27,6 +27,7 @@ class OrderBroadcastEvent implements ShouldBroadcast
     {
         return [
             new PrivateChannel("orders.branch.{$this->order->branch_id}"),
+            new Channel("orders.{$this->order->order_number}"),
         ];
     }
 
