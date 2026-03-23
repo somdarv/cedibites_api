@@ -6,22 +6,18 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateMenuItemRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
      * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         $menuItemId = $this->route('menuItem')?->id;
+        $branchId = $this->input('branch_id') ?? $this->route('menuItem')?->branch_id;
 
         return [
             'branch_id' => ['sometimes', 'exists:branches,id'],
@@ -31,18 +27,20 @@ class UpdateMenuItemRequest extends FormRequest
                 'sometimes',
                 'string',
                 'max:255',
-                'unique:menu_items,slug,'.$menuItemId.',id,branch_id,'.$this->input('branch_id'),
+                'unique:menu_items,slug,'.$menuItemId.',id,branch_id,'.$branchId,
             ],
             'description' => ['nullable', 'string'],
-            'base_price' => ['nullable', 'numeric', 'min:0'],
             'is_available' => ['boolean'],
-            'is_popular' => ['boolean'],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', 'exists:menu_tags,id'],
+            'add_on_ids' => ['nullable', 'array'],
+            'add_on_ids.*' => ['integer', 'exists:menu_add_ons,id'],
+            'pricing_type' => ['nullable', 'string', 'in:simple,options'],
+            'price' => ['nullable', 'numeric', 'min:0', 'required_if:pricing_type,simple'],
         ];
     }
 
     /**
-     * Get custom error messages for validation rules.
-     *
      * @return array<string, string>
      */
     public function messages(): array
@@ -51,8 +49,6 @@ class UpdateMenuItemRequest extends FormRequest
             'branch_id.exists' => 'Selected branch does not exist',
             'category_id.exists' => 'Selected category does not exist',
             'slug.unique' => 'A menu item with this name already exists in this branch',
-            'base_price.numeric' => 'Base price must be a number',
-            'base_price.min' => 'Base price cannot be negative',
         ];
     }
 }

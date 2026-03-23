@@ -7,64 +7,74 @@ use App\Http\Requests\StoreMenuItemRequest;
 use App\Http\Requests\UpdateMenuItemRequest;
 use App\Http\Resources\MenuItemCollection;
 use App\Http\Resources\MenuItemResource;
+use App\Models\MenuAddOn;
 use App\Models\MenuItem;
+use App\Models\MenuItemRating;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 
 class MenuItemController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    protected function menuItemWith(): array
+    {
+        return [
+            'branch',
+            'category',
+            'options' => fn ($q) => $q->orderBy('display_order'),
+            'options.media',
+            'options.branchPrices',
+            'tags',
+            'addOns',
+        ];
+    }
+
     public function index(Request $request): JsonResponse
     {
-        $query = MenuItem::with(['branch', 'category', 'sizes'])
-            ->when($request->branch_id, fn ($query, $branchId) => $query->where('branch_id', $branchId))
-            ->when($request->category_id, fn ($query, $categoryId) => $query->where('category_id', $categoryId))
-            ->when($request->is_available !== null, fn ($query) => $query->where('is_available', $request->boolean('is_available')))
-            ->when($request->is_popular !== null, fn ($query) => $query->where('is_popular', $request->boolean('is_popular')));
+        $query = MenuItem::with($this->menuItemWith())
+            ->when($request->branch_id, fn ($q, $branchId) => $q->where('branch_id', $branchId))
+            ->when($request->category_id, fn ($q, $categoryId) => $q->where('category_id', $categoryId))
+            ->when($request->is_available !== null, fn ($q) => $q->where('is_available', $request->boolean('is_available')))
+            ->when($request->boolean('popular'), fn ($q) => $q->whereHas('tags', fn ($tq) => $tq->where('slug', 'popular')));
 
-        // If per_page is explicitly set, use pagination
-        // Otherwise return all items (for menu display)
         if ($request->has('per_page')) {
             $menuItems = $query->paginate($request->per_page);
 
             return response()->paginated(new MenuItemCollection($menuItems));
         }
 
-        // Return all items without pagination
-        $menuItems = $query->get();
-
-        return response()->success(MenuItemResource::collection($menuItems));
+        return response()->success(MenuItemResource::collection($query->get()));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(StoreMenuItemRequest $request): JsonResponse
     {
         try {
-            $menuItem = MenuItem::create($request->validated());
+            $data = $request->safe()->except(['tag_ids', 'add_on_ids']);
+            $menuItem = MenuItem::create($data);
+
+            if ($request->filled('tag_ids')) {
+                $menuItem->tags()->sync($request->input('tag_ids'));
+            }
+
+            if ($request->filled('add_on_ids')) {
+                $this->syncAddOns($menuItem, $request->input('add_on_ids'));
+            }
+
+            if ($request->input('pricing_type') === 'simple') {
+                $this->syncSinglePriceOption($menuItem, (float) $request->input('price', 0));
+            }
 
             return response()->created(
-                new MenuItemResource($menuItem->load(['branch', 'category', 'sizes']))
+                new MenuItemResource($menuItem->fresh($this->menuItemWith()))
             );
         } catch (\Illuminate\Database\QueryException $e) {
-            // Handle database constraint violations
-            if ($e->getCode() === '23000') {
-                // Integrity constraint violation
-                if (str_contains($e->getMessage(), 'menu_items_branch_id_slug_unique')) {
-                    return response()->json([
-                        'message' => 'A menu item with this name already exists in this branch.',
-                        'errors' => [
-                            'slug' => ['This menu item name is already taken for this branch.'],
-                        ],
-                    ], 422);
-                }
+            if ($e->getCode() === '23000' && str_contains($e->getMessage(), 'menu_items_branch_id_slug_unique')) {
+                return response()->json([
+                    'message' => 'A menu item with this name already exists in this branch.',
+                    'errors' => [
+                        'slug' => ['This menu item name is already taken for this branch.'],
+                    ],
+                ], 422);
             }
 
             \Log::error('Menu item creation failed', [
@@ -89,42 +99,41 @@ class MenuItemController extends Controller
         }
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(MenuItem $menuItem): JsonResponse
     {
-        $menuItem->load(['branch', 'category', 'sizes']);
+        $menuItem->load($this->menuItemWith());
 
         return response()->success(new MenuItemResource($menuItem));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateMenuItemRequest $request, MenuItem $menuItem): JsonResponse
     {
         try {
-            $menuItem->update($request->validated());
+            $menuItem->update($request->safe()->except(['tag_ids', 'add_on_ids']));
+
+            if ($request->has('tag_ids')) {
+                $menuItem->tags()->sync($request->input('tag_ids', []));
+            }
+
+            if ($request->has('add_on_ids')) {
+                $this->syncAddOns($menuItem, $request->input('add_on_ids', []));
+            }
+
+            if ($request->input('pricing_type') === 'simple') {
+                $this->syncSinglePriceOption($menuItem, (float) $request->input('price', 0));
+            }
 
             return response()->success(
-                new MenuItemResource($menuItem->fresh(['branch', 'category', 'sizes']))
+                new MenuItemResource($menuItem->fresh($this->menuItemWith()))
             );
         } catch (\Illuminate\Database\QueryException $e) {
-            // Handle database constraint violations
-            if ($e->getCode() === '23000') {
-                // Integrity constraint violation
-                if (str_contains($e->getMessage(), 'menu_items_branch_id_slug_unique')) {
-                    return response()->json([
-                        'message' => 'A menu item with this name already exists in this branch.',
-                        'errors' => [
-                            'slug' => ['This menu item name is already taken for this branch.'],
-                        ],
-                    ], 422);
-                }
+            if ($e->getCode() === '23000' && str_contains($e->getMessage(), 'menu_items_branch_id_slug_unique')) {
+                return response()->json([
+                    'message' => 'A menu item with this name already exists in this branch.',
+                    'errors' => [
+                        'slug' => ['This menu item name is already taken for this branch.'],
+                    ],
+                ], 422);
             }
 
             \Log::error('Menu item update failed', [
@@ -151,54 +160,50 @@ class MenuItemController extends Controller
         }
     }
 
-    /**
-     * Upload image for menu item.
-     */
-    public function uploadImage(MenuItem $menuItem, Request $request): JsonResponse
+    protected function syncSinglePriceOption(MenuItem $menuItem, float $price): void
     {
-        $request->validate([
-            'image' => ['required', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
+        // Use withTrashed so restoring a soft-deleted standard option doesn't
+        // violate the (menu_item_id, option_key) unique constraint.
+        $option = $menuItem->options()->withTrashed()->firstOrNew(['option_key' => 'standard']);
+        $option->fill([
+            'option_label' => 'Standard',
+            'price' => $price,
+            'display_order' => 0,
+            'is_available' => true,
+            'deleted_at' => null,
         ]);
+        $option->save();
 
-        try {
-            // Clear existing images
-            $menuItem->clearMediaCollection('menu-items');
-
-            // Add new image
-            $menuItem->addMediaFromRequest('image')
-                ->toMediaCollection('menu-items');
-
-            return response()->success(
-                new MenuItemResource($menuItem->fresh(['branch', 'category', 'sizes'])),
-                'Image uploaded successfully.'
-            );
-        } catch (\Exception $e) {
-            \Log::error('Menu item image upload failed', [
-                'error' => $e->getMessage(),
-                'item_id' => $menuItem->id,
-            ]);
-
-            return response()->json([
-                'message' => 'Failed to upload image.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+        // Soft-delete any non-standard options left over from a previous options-mode setup.
+        $menuItem->options()->where('option_key', '!=', 'standard')->delete();
     }
 
     /**
-     * Bulk import menu items from CSV using Laravel Excel.
+     * @param  array<int, int>  $addOnIds
      */
+    protected function syncAddOns(MenuItem $menuItem, array $addOnIds): void
+    {
+        $sync = [];
+        foreach (array_values($addOnIds) as $i => $id) {
+            $addOn = MenuAddOn::query()->find($id);
+            if ($addOn && (int) $addOn->branch_id === (int) $menuItem->branch_id) {
+                $sync[$id] = ['sort_order' => $i];
+            }
+        }
+        $menuItem->addOns()->sync($sync);
+    }
+
     public function bulkImport(Request $request): JsonResponse
     {
         $request->validate([
-            'csv_file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:5120'], // 5MB max
+            'csv_file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:5120'],
             'branch_id' => ['required', 'exists:branches,id'],
         ]);
 
         try {
             $import = new \App\Imports\MenuItemsImport($request->branch_id);
 
-            \Excel::import($import, $request->file('csv_file'));
+            Excel::import($import, $request->file('csv_file'));
 
             $failures = $import->failures();
             $errors = $import->errors();
@@ -265,9 +270,6 @@ class MenuItemController extends Controller
         }
     }
 
-    /**
-     * Preview bulk import without saving using Laravel Excel.
-     */
     public function bulkImportPreview(Request $request): JsonResponse
     {
         $request->validate([
@@ -278,24 +280,21 @@ class MenuItemController extends Controller
         try {
             $file = $request->file('csv_file');
 
-            // Use Laravel Excel to read the file
-            $rows = \Excel::toCollection(new \App\Imports\MenuItemsImport($request->branch_id), $file)->first();
+            $rows = Excel::toCollection(new \App\Imports\MenuItemsImport($request->branch_id), $file)->first();
 
             $validRows = [];
             $invalidRows = [];
             $skipped = 0;
 
             foreach ($rows as $index => $row) {
-                $rowNumber = $index + 2; // +2 for header row and 0-based index
+                $rowNumber = $index + 2;
 
-                // Skip empty rows
                 if ($row->filter()->isEmpty()) {
                     $skipped++;
 
                     continue;
                 }
 
-                // Validate row data
                 $rowErrors = [];
 
                 if (empty(trim($row['name'] ?? ''))) {
@@ -317,7 +316,6 @@ class MenuItemController extends Controller
                     'description' => trim($row['description'] ?? ''),
                     'price' => ! empty($row['price']) ? (float) $row['price'] : null,
                     'is_available' => $this->parseBoolean($row['is_available'] ?? 'true'),
-                    'is_popular' => $this->parseBoolean($row['is_popular'] ?? 'false'),
                     'status' => empty($rowErrors) ? 'valid' : 'invalid',
                     'errors' => $rowErrors,
                 ];
@@ -356,14 +354,36 @@ class MenuItemController extends Controller
             return $value;
         }
 
-        $value = strtolower(trim($value));
+        $value = strtolower(trim((string) $value));
 
         return in_array($value, ['true', '1', 'yes', 'y'], true);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
+    public function rate(Request $request, MenuItem $menuItem): JsonResponse
+    {
+        $request->validate([
+            'rating' => ['required', 'integer', 'between:1,5'],
+            'order_item_id' => ['nullable', 'exists:order_items,id'],
+        ]);
+
+        $customerId = $request->user()->id;
+
+        MenuItemRating::updateOrCreate(
+            ['customer_id' => $customerId, 'menu_item_id' => $menuItem->id],
+            ['rating' => $request->input('rating'), 'order_item_id' => $request->input('order_item_id')]
+        );
+
+        $avg = MenuItemRating::where('menu_item_id', $menuItem->id)->avg('rating');
+        $count = MenuItemRating::where('menu_item_id', $menuItem->id)->count();
+
+        $menuItem->update(['rating' => round((float) $avg, 1), 'rating_count' => $count]);
+
+        return response()->success([
+            'rating' => $menuItem->fresh()->rating,
+            'rating_count' => $menuItem->fresh()->rating_count,
+        ], 'Rating submitted successfully.');
+    }
+
     public function destroy(MenuItem $menuItem): JsonResponse
     {
         try {

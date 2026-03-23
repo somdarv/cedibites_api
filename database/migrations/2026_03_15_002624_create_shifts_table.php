@@ -15,11 +15,12 @@ return new class extends Migration
             $table->id();
             $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
             $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
-            $table->timestamp('login_at');
-            $table->timestamp('logout_at')->nullable();
+            $table->dateTime('login_at');
+            $table->dateTime('logout_at')->nullable();
             $table->decimal('total_sales', 10, 2)->default(0);
             $table->unsignedInteger('order_count')->default(0);
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

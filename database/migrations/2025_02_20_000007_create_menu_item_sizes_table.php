@@ -11,15 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('menu_item_sizes', function (Blueprint $table) {
+        Schema::create('menu_item_options', function (Blueprint $table) {
             $table->id();
             $table->foreignId('menu_item_id')->constrained('menu_items')->onDelete('cascade');
-            $table->string('name');
+            $table->string('option_key');
+            $table->string('option_label');
             $table->decimal('price', 10, 2);
-            $table->integer('size_order')->default(0)->index();
+            $table->integer('display_order')->default(0)->index();
             $table->boolean('is_available')->default(true)->index();
             $table->timestamps();
+            $table->softDeletes();
             $table->index('menu_item_id');
+            $table->unique(['menu_item_id', 'option_key']);
         });
     }
 
@@ -28,6 +31,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('menu_item_sizes');
+        Schema::dropIfExists('menu_item_options');
     }
 };

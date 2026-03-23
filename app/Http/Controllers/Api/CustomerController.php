@@ -166,7 +166,7 @@ class CustomerController extends Controller
      */
     public function orders(Request $request, Customer $customer): JsonResponse
     {
-        $query = $customer->orders()->with(['items.menuItemSize.menuItem', 'payments', 'branch']);
+        $query = $customer->orders()->with(['items.menuItemOption.menuItem', 'payments', 'branch']);
 
         if ($request->has('status')) {
             $query->where('status', $request->status);

@@ -5,15 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CartItem extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'cart_id',
         'menu_item_id',
-        'menu_item_size_id',
+        'menu_item_option_id',
         'quantity',
         'unit_price',
         'subtotal',
@@ -39,8 +40,8 @@ class CartItem extends Model
         return $this->belongsTo(MenuItem::class);
     }
 
-    public function menuItemSize(): BelongsTo
+    public function menuItemOption(): BelongsTo
     {
-        return $this->belongsTo(MenuItemSize::class);
+        return $this->belongsTo(MenuItemOption::class);
     }
 }

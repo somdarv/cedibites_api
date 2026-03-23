@@ -26,9 +26,10 @@ class EmployeeAuthResource extends JsonResource
             'role' => $role,
             'branch' => $firstBranch?->name ?? '',
             'branchId' => (string) ($firstBranch?->id ?? ''),
-            'branchIds' => $this->employee->branches->pluck('id')->values()->all(),
+            'branchIds' => $this->employee->branches->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
             'roles' => $roles,
             'permissions' => $this->getAllPermissions()->pluck('name'),
+            'must_reset_password' => (bool) $this->must_reset_password,
         ];
     }
 }

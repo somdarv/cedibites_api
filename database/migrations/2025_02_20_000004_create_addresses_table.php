@@ -21,6 +21,7 @@ return new class extends Migration
             $table->decimal('longitude', 11, 8)->nullable();
             $table->boolean('is_default')->default(false)->index();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 
