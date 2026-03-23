@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SendOTPRequest extends FormRequest
 {
@@ -23,7 +24,14 @@ class SendOTPRequest extends FormRequest
     {
         return [
             'phone' => ['required', 'string', 'regex:/^\+233[0-9]{9}$/'],
-            'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
+            'email' => [
+                'nullable',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->where(
+                    fn ($query) => $query->where('phone', '!=', $this->input('phone'))
+                ),
+            ],
         ];
     }
 
