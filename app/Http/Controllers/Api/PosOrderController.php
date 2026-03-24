@@ -9,6 +9,7 @@ use App\Models\MenuItemOption;
 use App\Services\HubtelPaymentService;
 use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 class PosOrderController extends Controller
@@ -451,5 +452,26 @@ class PosOrderController extends Controller
             'menu_item_snapshot' => $menuItemSnapshot,
             'menu_item_option_snapshot' => $menuItemOptionSnapshot,
         ];
+    }
+
+    /**
+     * Verify a Ghana mobile money number via the Hubtel Verification API.
+     * Returns the registered account name, status, and profile type.
+     */
+    public function verifyMomo(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'momo_number' => ['required', 'string', 'regex:/^(0[0-9]{9}|\+?233[0-9]{9})$/'],
+        ], [
+            'momo_number.regex' => 'Mobile money number must be a valid Ghana phone number (e.g. 0241234567 or 233241234567)',
+        ]);
+
+        try {
+            $result = app(HubtelPaymentService::class)->verifyMomoNumber($validated['momo_number']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($result);
     }
 }
