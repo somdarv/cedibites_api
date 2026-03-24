@@ -69,6 +69,9 @@ return [
         'rmp_client_secret' => env('HUBTEL_RMP_CLIENT_SECRET', env('HUBTEL_PAYMENT_CLIENT_SECRET', env('HUBTEL_CLIENT_SECRET'))),
         'rmp_base_url' => env('HUBTEL_RMP_BASE_URL', 'https://rmp.hubtel.com'),
 
+        // Verification API (rnv.hubtel.com - MoMo registration & name query)
+        'rnv_base_url' => env('HUBTEL_RNV_BASE_URL', 'https://rnv.hubtel.com'),
+
         // Callback IP allowlist — comma-separated list of Hubtel's callback IPs.
         // When set, any callback from an IP not in this list is rejected with 403.
         // Leave empty (unset) to allow all IPs (useful for local development).

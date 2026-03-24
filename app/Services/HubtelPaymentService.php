@@ -563,6 +563,72 @@ class HubtelPaymentService
     }
 
     /**
+     * Verify whether a Ghana mobile money number is registered and retrieve the account name.
+     *
+     * Uses the Hubtel Verification API (rnv.hubtel.com).
+     *
+     * @param  string  $phone  Phone number in local (0XXXXXXXXX) or international (+?233XXXXXXXXX) format
+     * @return array{isRegistered: bool, name: string|null, status: string|null, profile: string|null}
+     */
+    public function verifyMomoNumber(string $phone): array
+    {
+        $channel = $this->detectMomoChannel($phone);
+
+        // Normalise to local format (0XXXXXXXXX) for the verification API
+        $localPhone = $phone;
+        if (str_starts_with($phone, '+233') && strlen($phone) === 13) {
+            $localPhone = '0'.substr($phone, 4);
+        } elseif (str_starts_with($phone, '233') && strlen($phone) === 12) {
+            $localPhone = '0'.substr($phone, 3);
+        }
+
+        $rnvBaseUrl = config('services.hubtel.rnv_base_url', 'https://rnv.hubtel.com');
+        $url = "{$rnvBaseUrl}/v2/merchantaccount/merchants/{$this->merchantAccountNumber}/mobilemoney/verify";
+
+        Log::info('Hubtel MoMo verification initiated', [
+            'phone' => substr($localPhone, 0, 3).'****'.substr($localPhone, -2),
+            'channel' => $channel,
+        ]);
+
+        $response = Http::withHeaders([
+            'Authorization' => $this->getRmpAuthHeader(),
+        ])->get($url, [
+            'channel' => $channel,
+            'customerMsisdn' => $localPhone,
+        ]);
+
+        if (! $response->successful() || $response->json('responseCode') !== '0000') {
+            Log::warning('Hubtel MoMo verification failed or not registered', [
+                'phone' => substr($localPhone, 0, 3).'****'.substr($localPhone, -2),
+                'status_code' => $response->status(),
+                'response_code' => $response->json('responseCode'),
+            ]);
+
+            return [
+                'isRegistered' => false,
+                'name' => null,
+                'status' => null,
+                'profile' => null,
+            ];
+        }
+
+        $data = $response->json('data', []);
+
+        Log::info('Hubtel MoMo verification successful', [
+            'phone' => substr($localPhone, 0, 3).'****'.substr($localPhone, -2),
+            'channel' => $channel,
+            'is_registered' => $data['isRegistered'] ?? false,
+        ]);
+
+        return [
+            'isRegistered' => $data['isRegistered'] ?? false,
+            'name' => $data['name'] ?? null,
+            'status' => $data['status'] ?? null,
+            'profile' => $data['profile'] ?? null,
+        ];
+    }
+
+    /**
      * Handle a Direct Receive Money callback from Hubtel RMP.
      *
      * @param  array  $payload  The callback payload from Hubtel

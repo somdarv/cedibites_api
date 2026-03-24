@@ -14,6 +14,7 @@ Route::prefix('employee')->group(function () {
 
 Route::prefix('pos')->group(function () {
     Route::post('orders', [PosOrderController::class, 'store']);
+    Route::post('verify-momo', [PosOrderController::class, 'verifyMomo']);
 });
 
 Route::prefix('shifts')->group(function () {
