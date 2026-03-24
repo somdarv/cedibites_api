@@ -34,7 +34,7 @@ class StorePosOrderRequest extends FormRequest
             'contact_phone' => ['required', 'string', 'max:20'],
             'customer_notes' => ['nullable', 'string'],
             'discount' => ['nullable', 'numeric', 'min:0', 'max:99999'],
-            'momo_number' => ['nullable', 'string', 'regex:/^(0[0-9]{9}|233[0-9]{9})$/'],
+            'momo_number' => ['nullable', 'string', 'regex:/^(0[0-9]{9}|\+?233[0-9]{9})$/'],
         ];
     }
 
