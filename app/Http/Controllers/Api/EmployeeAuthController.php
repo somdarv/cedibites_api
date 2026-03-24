@@ -7,7 +7,6 @@ use App\Events\StaffSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\EmployeeLoginRequest;
 use App\Http\Requests\ForgotPasswordRequest;
-use App\Http\Requests\PosLoginRequest;
 use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Resources\EmployeeAuthResource;
 use App\Models\Employee;
@@ -74,52 +73,6 @@ class EmployeeAuthController extends Controller
         return response()->success([
             'token' => $token,
             'user' => new EmployeeAuthResource($user->load(['employee.branches', 'roles', 'permissions'])),
-        ]);
-    }
-
-    /**
-     * POS login with 4-digit PIN.
-     */
-    public function posLogin(PosLoginRequest $request): JsonResponse
-    {
-        $employee = Employee::query()
-            ->where('pos_pin', $request->pin)
-            ->with(['user', 'branches'])
-            ->first();
-
-        if (! $employee || $employee->status !== EmployeeStatus::Active) {
-            return response()->forbidden('Invalid PIN or inactive account');
-        }
-
-        $user = $employee->user;
-        $token = $user->createToken('pos-auth-token')->plainTextToken;
-
-        $roles = $user->getRoleNames();
-        $role = $roles->first() ?? 'employee';
-
-        $staffUser = [
-            'id' => (string) $employee->id,
-            'name' => $user->name,
-            'role' => $role,
-            'branches' => $employee->branches->map(fn ($branch) => [
-                'id' => (string) $branch->id,
-                'name' => $branch->name,
-                'address' => $branch->address ?? '',
-            ])->values()->all(),
-        ];
-
-        $firstBranch = $employee->branches->first();
-
-        activity('auth')
-            ->causedBy($user)
-            ->performedOn($employee)
-            ->event('pos_login')
-            ->withProperties(['branch' => $firstBranch?->name])
-            ->log("POS login: {$user->name} at ".($firstBranch?->name ?? 'N/A'));
-
-        return response()->success([
-            'token' => $token,
-            'user' => $staffUser,
         ]);
     }
 

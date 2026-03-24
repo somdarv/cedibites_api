@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -11,13 +12,11 @@ class PasswordResetRequiredNotification extends Notification implements ShouldQu
 {
     use Queueable;
 
-    /**
-     * Create a new notification instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+    public $tries = 3;
+
+    public $backoff = [60, 300, 900];
+
+    public $timeout = 30;
 
     /**
      * Get the notification's delivery channels.
@@ -26,8 +25,13 @@ class PasswordResetRequiredNotification extends Notification implements ShouldQu
      */
     public function via(object $notifiable): array
     {
-        // Only send email notifications in testing environment
-        return app()->environment('testing') ? ['mail'] : ['mail'];
+        $channels = ['database', SmsChannel::class];
+
+        if ($notifiable->email) {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
     }
 
     /**
@@ -43,6 +47,14 @@ class PasswordResetRequiredNotification extends Notification implements ShouldQu
             ->line('This is a security measure to ensure your account remains protected.')
             ->line('If you have any questions, please contact your administrator.')
             ->salutation('Thank you, The CediBites Team');
+    }
+
+    /**
+     * Get the SMS representation of the notification.
+     */
+    public function toSms(): string
+    {
+        return 'CediBites: Your administrator has required a password reset. You will be prompted to set a new password on your next login to the staff portal.';
     }
 
     /**

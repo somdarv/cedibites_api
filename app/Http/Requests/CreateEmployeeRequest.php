@@ -32,7 +32,6 @@ class CreateEmployeeRequest extends FormRequest
             'role' => ['required', Rule::enum(Role::class)],
             'hire_date' => ['nullable', 'date'],
             'status' => ['nullable', Rule::enum(EmployeeStatus::class)],
-            'pos_pin' => ['nullable', 'string', 'size:4', 'regex:/^\d{4}$/'],
 
             // HR Information
             'ssnit_number' => ['nullable', 'string', 'max:255'],
@@ -66,8 +65,6 @@ class CreateEmployeeRequest extends FormRequest
             'branch_ids.required' => 'At least one branch is required.',
             'branch_ids.*.exists' => 'Selected branch does not exist.',
             'role.required' => 'Role is required.',
-            'pos_pin.size' => 'POS PIN must be exactly 4 digits.',
-            'pos_pin.regex' => 'POS PIN must contain only numbers.',
             'date_of_birth.before' => 'Date of birth must be in the past.',
             'permissions.*.exists' => 'Invalid permission specified.',
         ];

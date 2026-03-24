@@ -32,7 +32,6 @@ class UpdateEmployeeRequest extends FormRequest
             'branch_ids.*' => ['required', 'integer', 'exists:branches,id'],
             'role' => ['sometimes', Rule::enum(Role::class)],
             'status' => ['sometimes', Rule::enum(EmployeeStatus::class)],
-            'pos_pin' => ['nullable', 'string', 'size:4', 'regex:/^\d{4}$/'],
 
             // HR Information
             'ssnit_number' => ['nullable', 'string', 'max:255'],
@@ -61,8 +60,6 @@ class UpdateEmployeeRequest extends FormRequest
             'phone.unique' => 'This phone number is already registered.',
             'email.unique' => 'This email is already registered.',
             'branch_ids.*.exists' => 'Selected branch does not exist.',
-            'pos_pin.size' => 'POS PIN must be exactly 4 digits.',
-            'pos_pin.regex' => 'POS PIN must contain only numbers.',
             'date_of_birth.before' => 'Date of birth must be in the past.',
             'permissions.*.exists' => 'Invalid permission specified.',
         ];
