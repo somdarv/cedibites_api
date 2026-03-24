@@ -50,7 +50,7 @@ class EmployeeSeeder extends Seeder
                 'pos_pin' => null,
             ]
         );
-        $emp->branches()->sync([]);
+        $emp->branches()->sync(Branch::all());
     }
 
     private function createEmployeesForBranch(Branch $branch): void

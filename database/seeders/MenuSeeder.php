@@ -49,9 +49,9 @@ class MenuSeeder extends Seeder
                     'description' => 'Smoky party jollof rice — served with free coleslaw',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Plain', 'price' => 0.00],
-                        ['name' => 'Assorted', 'price' => 0.00],
-                        ['name' => 'Seafood', 'price' => 0.00],
+                        ['name' => 'Plain', 'price' => 0.1],
+                        ['name' => 'Assorted', 'price' => 0.1],
+                        ['name' => 'Seafood', 'price' => 0.1],
                     ],
                 ],
                 [
@@ -59,24 +59,24 @@ class MenuSeeder extends Seeder
                     'description' => 'Mixed vegetable fried rice — served with free coleslaw',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Plain', 'price' => 0.00],
-                        ['name' => 'Assorted', 'price' => 0.00],
-                        ['name' => 'Seafood', 'price' => 0.00],
+                        ['name' => 'Plain', 'price' => 0.1],
+                        ['name' => 'Assorted', 'price' => 0.1],
+                        ['name' => 'Seafood', 'price' => 0.1],
                     ],
                 ],
                 [
                     'name' => 'Noodles',
                     'description' => 'Noodles — served with free coleslaw',
                     'sizes' => [
-                        ['name' => 'Assorted', 'price' => 0.00],
-                        ['name' => 'Seafood', 'price' => 0.00],
+                        ['name' => 'Assorted', 'price' => 0.1],
+                        ['name' => 'Seafood', 'price' => 0.1],
                     ],
                 ],
                 [
                     'name' => 'Banku',
                     'description' => 'Fermented corn & cassava dough with grilled tilapia',
                     'sizes' => [
-                        ['name' => 'Grilled Tilapia', 'price' => 0.00],
+                        ['name' => 'Grilled Tilapia', 'price' => 0.1],
                     ],
                 ],
             ],
@@ -86,8 +86,8 @@ class MenuSeeder extends Seeder
                     'description' => 'Crispy chicken drumsticks',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Special Crunch', 'price' => 0.00],
-                        ['name' => 'Juicy Fried', 'price' => 0.00],
+                        ['name' => 'Special Crunch', 'price' => 0.1],
+                        ['name' => 'Juicy Fried', 'price' => 0.1],
                     ],
                 ],
                 [
@@ -95,8 +95,8 @@ class MenuSeeder extends Seeder
                     'description' => 'Perfectly seasoned and roasted chicken',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Full', 'price' => 0.00],
-                        ['name' => 'Half Cut', 'price' => 0.00],
+                        ['name' => 'Full', 'price' => 0.1],
+                        ['name' => 'Half Cut', 'price' => 0.1],
                     ],
                 ],
             ],
@@ -106,8 +106,8 @@ class MenuSeeder extends Seeder
                     'description' => '"For the street" — Choose Fried Rice or Jollof with 3 drumsticks',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Fried Rice', 'price' => 0.00],
-                        ['name' => 'Jollof', 'price' => 0.00],
+                        ['name' => 'Fried Rice', 'price' => 0.1],
+                        ['name' => 'Jollof', 'price' => 0.1],
                     ],
                 ],
                 [
@@ -115,35 +115,35 @@ class MenuSeeder extends Seeder
                     'description' => '"For the street" — Assorted Fried Rice, Jollof, or Noodles with 3 drumsticks',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Fried Rice', 'price' => 0.00],
-                        ['name' => 'Jollof', 'price' => 0.00],
-                        ['name' => 'Noodles', 'price' => 0.00],
+                        ['name' => 'Fried Rice', 'price' => 0.1],
+                        ['name' => 'Jollof', 'price' => 0.1],
+                        ['name' => 'Noodles', 'price' => 0.1],
                     ],
                 ],
                 [
                     'name' => 'Fried Rice / Jollof + 7 Drums + Kɔkɔɔ',
                     'description' => '"Big budget meal" — Choose Fried Rice or Jollof with 7 drumsticks and kɔkɔɔ',
                     'sizes' => [
-                        ['name' => 'Fried Rice', 'price' => 0.00],
-                        ['name' => 'Jollof', 'price' => 0.00],
+                        ['name' => 'Fried Rice', 'price' => 0.1],
+                        ['name' => 'Jollof', 'price' => 0.1],
                     ],
                 ],
                 [
                     'name' => 'Assorted Fried Rice / Jollof / Noodles + 7 Drums + Kɔkɔɔ',
                     'description' => '"Big budget meal" — Assorted Fried Rice, Jollof, or Noodles with 7 drumsticks and kɔkɔɔ',
                     'sizes' => [
-                        ['name' => 'Fried Rice', 'price' => 0.00],
-                        ['name' => 'Jollof', 'price' => 0.00],
-                        ['name' => 'Noodles', 'price' => 0.00],
+                        ['name' => 'Fried Rice', 'price' => 0.1],
+                        ['name' => 'Jollof', 'price' => 0.1],
+                        ['name' => 'Noodles', 'price' => 0.1],
                     ],
                 ],
                 [
                     'name' => 'Assorted Fried Rice / Jollof / Noodles + Full Chicken + Kɔkɔɔ',
                     'description' => '"Big budget meal" — Assorted Fried Rice, Jollof, or Noodles with a full chicken and kɔkɔɔ',
                     'sizes' => [
-                        ['name' => 'Fried Rice', 'price' => 0.00],
-                        ['name' => 'Jollof', 'price' => 0.00],
-                        ['name' => 'Noodles', 'price' => 0.00],
+                        ['name' => 'Fried Rice', 'price' => 0.1],
+                        ['name' => 'Jollof', 'price' => 0.1],
+                        ['name' => 'Noodles', 'price' => 0.1],
                     ],
                 ],
             ],
@@ -153,9 +153,9 @@ class MenuSeeder extends Seeder
                     'description' => 'Cedi wraps with your choice of filling',
                     'is_popular' => true,
                     'sizes' => [
-                        ['name' => 'Chicken', 'price' => 0.00],
-                        ['name' => 'Beef', 'price' => 0.00],
-                        ['name' => 'Mix', 'price' => 0.00],
+                        ['name' => 'Chicken', 'price' => 0.1],
+                        ['name' => 'Beef', 'price' => 0.1],
+                        ['name' => 'Mix', 'price' => 0.1],
                     ],
                 ],
             ],

@@ -97,15 +97,18 @@ class EmployeeAuthController extends Controller
         $roles = $user->getRoleNames();
         $role = $roles->first() ?? 'employee';
 
-        $firstBranch = $employee->branches->first();
         $staffUser = [
             'id' => (string) $employee->id,
             'name' => $user->name,
             'role' => $role,
-            'branch' => $firstBranch?->name ?? '',
-            'branchId' => (string) ($firstBranch?->id ?? ''),
-            'branchIds' => $employee->branches->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
+            'branches' => $employee->branches->map(fn ($branch) => [
+                'id' => (string) $branch->id,
+                'name' => $branch->name,
+                'address' => $branch->address ?? '',
+            ])->values()->all(),
         ];
+
+        $firstBranch = $employee->branches->first();
 
         activity('auth')
             ->causedBy($user)
