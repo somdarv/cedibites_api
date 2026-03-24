@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('employee')->group(function () {
     Route::post('login', [EmployeeAuthController::class, 'login']);
-    Route::post('pos-login', [EmployeeAuthController::class, 'posLogin']);
 });
 
 Route::get('branches', [BranchController::class, 'index']);

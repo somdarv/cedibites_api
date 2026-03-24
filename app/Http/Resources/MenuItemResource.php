@@ -31,10 +31,6 @@ class MenuItemResource extends JsonResource
             'branch' => $this->whenLoaded('branch', fn () => new BranchResource($this->branch)),
             'category' => $this->whenLoaded('category', fn () => new MenuCategoryResource($this->category)),
             'image_url' => $firstOption?->getFirstMediaUrl('menu-item-options') ?: null,
-            'is_new' => $this->created_at->isAfter(now()->subDays(7)),
-            'popular' => $this->relationLoaded('tags')
-                ? $this->tags->contains('slug', 'popular')
-                : $this->tags()->where('slug', 'popular')->exists(),
             'options' => MenuItemOptionResource::collection($this->whenLoaded('options')),
             'tags' => MenuTagResource::collection($this->whenLoaded('tags')),
             'add_ons' => MenuAddOnResource::collection($this->whenLoaded('addOns')),
