@@ -25,6 +25,7 @@ class UpdateOrderStatusRequest extends FormRequest
                 'required',
                 Rule::in([
                     'received',
+                    'accepted',
                     'pending',
                     'confirmed',
                     'preparing',

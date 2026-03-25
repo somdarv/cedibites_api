@@ -28,7 +28,7 @@ class StorePosOrderRequest extends FormRequest
             'items.*.menu_item_option_id' => ['nullable', 'integer', 'exists:menu_item_options,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
-            'payment_method' => ['required', 'string', 'in:cash,mobile_money,card,wallet,ghqr'],
+            'payment_method' => ['required', 'string', 'in:cash,mobile_money,card,wallet,ghqr,no_charge'],
             'fulfillment_type' => ['required', 'string', 'in:dine_in,takeaway'],
             'contact_name' => ['required', 'string', 'max:255'],
             'contact_phone' => ['required', 'string', 'max:20'],

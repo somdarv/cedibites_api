@@ -27,6 +27,9 @@ class PaymentResource extends JsonResource
             'order' => $this->whenLoaded('order', fn () => [
                 'id' => $this->order->id,
                 'order_number' => $this->order->order_number,
+                'order_source' => $this->order->order_source,
+                'contact_name' => $this->order->contact_name,
+                'contact_phone' => $this->order->contact_phone,
                 'customer' => [
                     'name' => $this->order->customer->user->name ?? null,
                     'phone' => $this->order->customer->user->phone ?? null,
