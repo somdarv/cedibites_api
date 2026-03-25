@@ -17,7 +17,7 @@ class OrderManagementService
         $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
 
         // No payment filter here - admin sees all orders by default
-        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory']);
+        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory.changedBy', 'assignedEmployee.user']);
 
         $employeeBranchIds = $employee?->branches()->pluck('branches.id');
 
@@ -151,7 +151,15 @@ class OrderManagementService
     public function updateOrderStatus(Order $order, string $status, ?string $notes = null, ?User $causer = null): Order
     {
         $oldStatus = $order->status;
-        $order->update(['status' => $status]);
+
+        $updateData = ['status' => $status];
+
+        // Auto-assign employee when order is accepted
+        if ($status === 'accepted' && ! $order->assigned_employee_id && $causer?->employee) {
+            $updateData['assigned_employee_id'] = $causer->employee->id;
+        }
+
+        $order->update($updateData);
 
         if ($notes) {
             $order->statusHistory()->create([
@@ -169,6 +177,7 @@ class OrderManagementService
                     'old_status' => $oldStatus,
                     'new_status' => $status,
                     'notes' => $notes,
+                    'assigned_employee_id' => $order->assigned_employee_id,
                 ])
                 ->event('status_changed')
                 ->log("Order {$order->order_number} status changed to {$status}");

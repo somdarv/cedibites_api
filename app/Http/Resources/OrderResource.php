@@ -38,6 +38,12 @@ class OrderResource extends JsonResource
                 'latitude' => $this->branch?->latitude,
                 'longitude' => $this->branch?->longitude,
             ],
+            'assigned_employee_id' => $this->assigned_employee_id,
+            'assigned_employee' => $this->assignedEmployee ? [
+                'id' => $this->assignedEmployee->id,
+                'name' => $this->assignedEmployee->user?->name,
+                'phone' => $this->assignedEmployee->user?->phone,
+            ] : null,
             'items' => $this->items->map(fn ($item) => [
                 'id' => $item->id,
                 'menu_item_id' => $item->menu_item_id,
@@ -80,6 +86,18 @@ class OrderResource extends JsonResource
                 'transaction_id' => $this->payments->first()->transaction_id,
                 'paid_at' => $this->payments->first()->paid_at?->toIso8601String(),
             ] : null,
+            'status_history' => $this->statusHistory->map(fn ($history) => [
+                'id' => $history->id,
+                'status' => $history->status,
+                'notes' => $history->notes,
+                'changed_by_type' => $history->changed_by_type,
+                'changed_by' => $history->changedBy ? [
+                    'id' => $history->changedBy->id,
+                    'name' => $history->changedBy->name,
+                ] : null,
+                'changed_at' => $history->changed_at?->toIso8601String(),
+                'created_at' => $history->created_at?->toIso8601String(),
+            ]),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
