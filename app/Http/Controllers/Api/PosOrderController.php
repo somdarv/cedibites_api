@@ -132,7 +132,7 @@ class PosOrderController extends Controller
                     try {
                         $hubtelService = app(HubtelPaymentService::class);
 
-                        $momoPhone = $request->validated('momo_number') ?? $request->validated('contact_phone');
+                        $momoPhone = $request->validated('momo_number');
 
                         $hubtelService->initializeReceiveMoney([
                             'order' => $order,
