@@ -17,7 +17,6 @@ class EmployeeFactory extends Factory
             'status' => fake()->randomElement(EmployeeStatus::cases()),
             'hire_date' => fake()->dateTimeBetween('-2 years', 'now'),
             'performance_rating' => fake()->optional(0.7)->randomFloat(2, 3.0, 5.0),
-            'pos_pin' => fake()->optional(0.3)->numerify('####'),
         ];
     }
 

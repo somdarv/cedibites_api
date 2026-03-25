@@ -19,7 +19,6 @@ return new class extends Migration
             $table->enum('status', EmployeeStatus::values())->default(EmployeeStatus::Active->value)->index();
             $table->date('hire_date')->nullable();
             $table->decimal('performance_rating', 5, 2)->nullable();
-            $table->string('pos_pin', 4)->nullable();
 
             // HR Information fields
             $table->string('ssnit_number')->nullable();

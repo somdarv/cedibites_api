@@ -68,7 +68,7 @@ class RoleController extends Controller
     private function formatPermissionDisplayName(string $permissionName): string
     {
         $displayNames = [
-            'view_orders' => 'Can Place Orders',
+            'view_orders' => 'Can View Orders',
             'create_orders' => 'Can Place Orders',
             'update_orders' => 'Can Advance Orders',
             'delete_orders' => 'Can Cancel Orders',
@@ -82,6 +82,19 @@ class RoleController extends Controller
             'manage_employees' => 'Can Manage Staff',
             'view_analytics' => 'Can View Reports',
             'view_activity_log' => 'Can View Activity Log',
+            // Portal access
+            'access_admin_panel' => 'Access Admin Panel',
+            'access_manager_portal' => 'Access Manager Portal',
+            'access_sales_portal' => 'Access Sales Portal',
+            'access_partner_portal' => 'Access Partner Portal',
+            'access_pos' => 'Access POS Terminal',
+            'access_kitchen' => 'Access Kitchen Display',
+            'access_order_manager' => 'Access Order Manager',
+            // Feature flags
+            'manage_shifts' => 'Manage Shifts',
+            'manage_settings' => 'Manage Settings',
+            'view_my_shifts' => 'View My Shifts',
+            'view_my_sales' => 'View My Sales',
         ];
 
         return $displayNames[$permissionName] ?? ucwords(str_replace('_', ' ', $permissionName));
@@ -94,7 +107,7 @@ class RoleController extends Controller
     {
         $descriptions = [
             'view_orders' => 'View orders and order history',
-            'create_orders' => 'Create new orders via call center or manager portal',
+            'create_orders' => 'Create new orders via call center or staff portal',
             'update_orders' => 'Move orders through statuses (accept, start, complete)',
             'delete_orders' => 'Cancel or delete orders',
             'view_menu' => 'View menu items and categories',
@@ -107,6 +120,19 @@ class RoleController extends Controller
             'manage_employees' => 'Create, edit, or suspend staff accounts',
             'view_analytics' => 'Access to sales analytics and branch performance',
             'view_activity_log' => 'View system activity and audit logs',
+            // Portal access
+            'access_admin_panel' => 'Log in to the admin panel',
+            'access_manager_portal' => 'Log in to the manager portal',
+            'access_sales_portal' => 'Log in to the staff sales portal',
+            'access_partner_portal' => 'Log in to the branch partner portal',
+            'access_pos' => 'Log in to the POS terminal with a PIN',
+            'access_kitchen' => 'Log in to the kitchen display',
+            'access_order_manager' => 'Log in to the order manager display',
+            // Feature flags
+            'manage_shifts' => 'View and manage staff shifts for the branch',
+            'manage_settings' => 'Configure branch settings',
+            'view_my_shifts' => 'View personal shift history and summaries',
+            'view_my_sales' => 'View personal sales history and totals',
         ];
 
         return $descriptions[$permissionName] ?? 'Permission to '.str_replace('_', ' ', $permissionName);

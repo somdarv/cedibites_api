@@ -31,7 +31,6 @@ class Employee extends Model
         'status',
         'hire_date',
         'performance_rating',
-        'pos_pin',
         // HR Information
         'ssnit_number',
         'ghana_card_id',

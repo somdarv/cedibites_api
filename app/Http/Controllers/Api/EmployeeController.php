@@ -104,7 +104,7 @@ class EmployeeController extends Controller
 
             // Add optional fields if provided
             $optionalFields = [
-                'pos_pin', 'ssnit_number', 'ghana_card_id', 'tin_number',
+                'ssnit_number', 'ghana_card_id', 'tin_number',
                 'date_of_birth', 'nationality', 'emergency_contact_name',
                 'emergency_contact_phone', 'emergency_contact_relationship',
             ];
@@ -201,7 +201,7 @@ class EmployeeController extends Controller
 
             // Update HR fields if provided
             $hrFields = [
-                'pos_pin', 'ssnit_number', 'ghana_card_id', 'tin_number',
+                'ssnit_number', 'ghana_card_id', 'tin_number',
                 'date_of_birth', 'nationality', 'emergency_contact_name',
                 'emergency_contact_phone', 'emergency_contact_relationship',
             ];

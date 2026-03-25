@@ -35,4 +35,19 @@ enum Permission: string
 
     // Audit
     case ViewActivityLog = 'view_activity_log';
+
+    // Portal access
+    case AccessAdminPanel = 'access_admin_panel';
+    case AccessManagerPortal = 'access_manager_portal';
+    case AccessSalesPortal = 'access_sales_portal';
+    case AccessPartnerPortal = 'access_partner_portal';
+    case AccessPos = 'access_pos';
+    case AccessKitchen = 'access_kitchen';
+    case AccessOrderManager = 'access_order_manager';
+
+    // Feature flags (nav gating within portals)
+    case ManageShifts = 'manage_shifts';
+    case ManageSettings = 'manage_settings';
+    case ViewMyShifts = 'view_my_shifts';
+    case ViewMySales = 'view_my_sales';
 }

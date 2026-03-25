@@ -21,10 +21,6 @@ class DatabaseSeeder extends Seeder
             MenuSeeder::class,
             MenuAddOnSeeder::class,
             PromoSeeder::class,
-            CustomerSeeder::class,
-            OrderSeeder::class,
-            ShiftSeeder::class,
-            CartSeeder::class,
         ]);
     }
 }

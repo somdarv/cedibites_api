@@ -44,6 +44,7 @@ class RoleSeeder extends Seeder
             Permission::ViewCustomers->value,
             Permission::ViewEmployees->value,
             Permission::ViewAnalytics->value,
+            Permission::AccessPartnerPortal->value,
         ]);
 
         // Create Manager role (branch operations)
@@ -65,6 +66,13 @@ class RoleSeeder extends Seeder
             Permission::ViewEmployees->value,
             Permission::ManageEmployees->value,
             Permission::ViewAnalytics->value,
+            Permission::AccessManagerPortal->value,
+            Permission::AccessPos->value,
+            Permission::AccessKitchen->value,
+            Permission::AccessOrderManager->value,
+            Permission::ManageShifts->value,
+            Permission::ManageSettings->value,
+            Permission::ViewMyShifts->value,
         ]);
 
         // Create Call Center role (order placement)
@@ -80,6 +88,9 @@ class RoleSeeder extends Seeder
             Permission::ViewBranches->value,
             Permission::ViewCustomers->value,
             Permission::ManageCustomers->value,
+            Permission::AccessSalesPortal->value,
+            Permission::ViewMySales->value,
+            Permission::ViewMyShifts->value,
         ]);
 
         // Create Kitchen role (kitchen display system)
@@ -89,8 +100,9 @@ class RoleSeeder extends Seeder
         );
         $kitchen->syncPermissions([
             Permission::ViewOrders->value,
-            Permission::UpdateOrders->value, // For order status updates
+            Permission::UpdateOrders->value,
             Permission::ViewMenu->value,
+            Permission::AccessKitchen->value,
         ]);
 
         // Create Rider role (delivery)
@@ -100,11 +112,12 @@ class RoleSeeder extends Seeder
         );
         $rider->syncPermissions([
             Permission::ViewOrders->value,
-            Permission::UpdateOrders->value, // For delivery status updates
+            Permission::UpdateOrders->value,
             Permission::ViewCustomers->value,
+            Permission::AccessOrderManager->value,
         ]);
 
-        // Create Employee role (legacy compatibility)
+        // Create Employee role
         $employee = Role::updateOrCreate(
             ['name' => RoleEnum::Employee->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Employee->value, 'guard_name' => 'api']
@@ -116,6 +129,10 @@ class RoleSeeder extends Seeder
             Permission::ViewMenu->value,
             Permission::ViewBranches->value,
             Permission::ViewCustomers->value,
+            Permission::AccessSalesPortal->value,
+            Permission::AccessPos->value,
+            Permission::ViewMySales->value,
+            Permission::ViewMyShifts->value,
         ]);
     }
 }

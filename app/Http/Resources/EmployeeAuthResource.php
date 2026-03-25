@@ -18,15 +18,15 @@ class EmployeeAuthResource extends JsonResource
         $roles = $this->getRoleNames();
         $role = $roles->first() ?? 'employee';
 
-        $firstBranch = $this->employee->branches->first();
-
         return [
             'id' => (string) $this->employee->id,
             'name' => $this->name,
             'role' => $role,
-            'branch' => $firstBranch?->name ?? '',
-            'branchId' => (string) ($firstBranch?->id ?? ''),
-            'branchIds' => $this->employee->branches->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
+            'branches' => $this->employee->branches->map(fn ($branch) => [
+                'id' => (string) $branch->id,
+                'name' => $branch->name,
+                'address' => $branch->address ?? '',
+            ])->values()->all(),
             'roles' => $roles,
             'permissions' => $this->getAllPermissions()->pluck('name'),
             'must_reset_password' => (bool) $this->must_reset_password,

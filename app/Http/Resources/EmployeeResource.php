@@ -41,7 +41,6 @@ class EmployeeResource extends JsonResource
             'employee_no' => $this->employee_no,
             'status' => $this->status,
             'hire_date' => $this->hire_date?->toDateString(),
-            'pos_pin' => $this->pos_pin,
             'ssnit_number' => $this->ssnit_number,
             'ghana_card_id' => $this->ghana_card_id,
             'tin_number' => $this->tin_number,

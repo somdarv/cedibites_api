@@ -38,7 +38,7 @@ class BranchController extends Controller
         // Add today's stats to each branch
         $today = now()->startOfDay();
         $branchesWithStats = $branches->map(function ($branch) use ($today) {
-            $todayOrders = $branch->orders()->whereDate('created_at', $today)->count();
+            $todayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today)->count();
             $todayRevenue = $branch->orders()
                 ->whereDate('created_at', $today)
                 ->whereIn('status', ['completed', 'delivered'])
@@ -394,7 +394,7 @@ class BranchController extends Controller
      */
     public function orders(Request $request, Branch $branch): JsonResponse
     {
-        $query = $branch->orders()->with(['customer.user', 'items.menuItemOption.menuItem', 'payments']);
+        $query = $branch->orders()->paymentConfirmed()->with(['customer.user', 'items.menuItemOption.menuItem', 'payments']);
 
         if ($request->has('status')) {
             $query->where('status', $request->status);
@@ -427,9 +427,9 @@ class BranchController extends Controller
         $stats = [
             'total_employees' => $branch->employees()->count(),
             'active_employees' => $branch->employees()->where('status', 'active')->count(),
-            'total_orders' => $branch->orders()->count(),
-            'today_orders' => $branch->orders()->whereDate('created_at', $today)->count(),
-            'month_orders' => $branch->orders()->whereDate('created_at', '>=', $thisMonth)->count(),
+            'total_orders' => $branch->orders()->paymentConfirmed()->count(),
+            'today_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', $today)->count(),
+            'month_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', '>=', $thisMonth)->count(),
             'today_revenue' => $branch->orders()
                 ->whereDate('created_at', $today)
                 ->whereIn('status', ['completed', 'delivered'])
