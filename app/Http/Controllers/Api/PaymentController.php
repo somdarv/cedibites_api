@@ -217,6 +217,16 @@ class PaymentController extends Controller
      */
     public function verifyPayment(Payment $payment): JsonResponse
     {
+        // If the payment is already in a terminal state (completed/failed/refunded),
+        // return the local record directly without calling the external API.
+        // This covers RMP payments where the callback has already updated the status.
+        if (in_array($payment->payment_status, ['completed', 'failed', 'refunded'])) {
+            return response()->success(
+                new PaymentResource($payment->fresh()),
+                'Payment verified successfully'
+            );
+        }
+
         try {
             $order = $payment->order;
             $result = $this->hubtelService->verifyTransaction($order->order_number);

@@ -16,7 +16,8 @@ class OrderManagementService
         $employee = $user->employee;
         $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
 
-        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory']);
+        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory'])
+            ->paymentConfirmed();
 
         $employeeBranchIds = $employee?->branches()->pluck('branches.id');
 
@@ -106,14 +107,17 @@ class OrderManagementService
 
         return [
             'pending_orders' => Order::whereIn('branch_id', $branchIds)
+                ->paymentConfirmed()
                 ->where('status', 'received')
                 ->count(),
 
             'preparing_orders' => Order::whereIn('branch_id', $branchIds)
+                ->paymentConfirmed()
                 ->whereIn('status', ['preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'])
                 ->count(),
 
             'today_orders' => Order::whereIn('branch_id', $branchIds)
+                ->paymentConfirmed()
                 ->whereDate('created_at', $today)
                 ->count(),
 
@@ -181,6 +185,7 @@ class OrderManagementService
 
         return Order::with(['customer.user', 'items.menuItemOption.menuItem', 'branch'])
             ->whereIn('branch_id', $branchIds)
+            ->paymentConfirmed()
             ->whereIn('status', ['received', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'])
             ->latest();
     }
