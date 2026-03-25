@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -97,5 +98,15 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    /**
+     * Scope to only include orders with at least one completed payment.
+     * Used in all operational views (kitchen, order manager, staff, dashboards)
+     * so that unpaid/pending-payment orders are hidden until payment is confirmed.
+     */
+    public function scopePaymentConfirmed(Builder $query): void
+    {
+        $query->whereHas('payments', fn (Builder $q) => $q->where('payment_status', 'completed'));
     }
 }

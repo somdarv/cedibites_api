@@ -197,6 +197,7 @@ class OrderController extends Controller
         $branchId = $request->query('branch_id');
 
         $query = Order::with(['branch', 'customer.user', 'items.menuItem', 'items.menuItemOption.media', 'statusHistory', 'payments'])
+            ->paymentConfirmed()
             ->whereIn('status', ['received', 'preparing', 'ready'])
             ->orderBy('created_at', 'asc');
 
@@ -229,6 +230,7 @@ class OrderController extends Controller
         $branchId = $request->query('branch_id');
 
         $query = Order::with(['branch', 'items.menuItem', 'items.menuItemOption.media'])
+            ->paymentConfirmed()
             ->whereIn('status', ['received', 'accepted', 'preparing', 'ready'])
             ->orderBy('created_at', 'asc');
 
