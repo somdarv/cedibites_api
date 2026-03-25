@@ -28,13 +28,13 @@ class StorePosOrderRequest extends FormRequest
             'items.*.menu_item_option_id' => ['nullable', 'integer', 'exists:menu_item_options,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
-            'payment_method' => ['required', 'string', 'in:cash,mobile_money,card,wallet,ghqr'],
+            'payment_method' => ['required', 'string', 'in:cash,mobile_money,card,wallet,ghqr,no_charge'],
             'fulfillment_type' => ['required', 'string', 'in:dine_in,takeaway'],
             'contact_name' => ['required', 'string', 'max:255'],
             'contact_phone' => ['required', 'string', 'max:20'],
             'customer_notes' => ['nullable', 'string'],
             'discount' => ['nullable', 'numeric', 'min:0', 'max:99999'],
-            'momo_number' => ['nullable', 'string', 'regex:/^(0[0-9]{9}|\+?233[0-9]{9})$/'],
+            'momo_number' => ['required_if:payment_method,mobile_money', 'nullable', 'string', 'regex:/^(0[0-9]{9}|\+?233[0-9]{9})$/'],
         ];
     }
 
@@ -78,6 +78,7 @@ class StorePosOrderRequest extends FormRequest
             'customer_notes.string' => 'Customer notes must be a string',
             'discount.numeric' => 'Discount must be a number',
             'discount.min' => 'Discount cannot be negative',
+            'momo_number.required_if' => 'A MoMo number is required for mobile money payments',
             'momo_number.regex' => 'Mobile money number must be a valid Ghana phone number (e.g. 0241234567 or 233241234567)',
         ];
     }

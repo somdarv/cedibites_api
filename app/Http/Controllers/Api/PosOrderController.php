@@ -132,7 +132,7 @@ class PosOrderController extends Controller
                     try {
                         $hubtelService = app(HubtelPaymentService::class);
 
-                        $momoPhone = $request->validated('momo_number') ?? $request->validated('contact_phone');
+                        $momoPhone = $request->validated('momo_number');
 
                         $hubtelService->initializeReceiveMoney([
                             'order' => $order,
@@ -163,6 +163,14 @@ class PosOrderController extends Controller
                             'customer_id' => null,
                         ]);
                     }
+                } elseif ($paymentMethod === 'no_charge') {
+                    \App\Models\Payment::create([
+                        'order_id' => $order->id,
+                        'payment_method' => 'no_charge',
+                        'amount' => 0,
+                        'payment_status' => 'no_charge',
+                        'customer_id' => null,
+                    ]);
                 } else {
                     // For cash, card, wallet, ghqr - mark as completed immediately
                     \App\Models\Payment::create([

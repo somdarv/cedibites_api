@@ -96,6 +96,7 @@ Route::prefix('admin')->group(function () {
 
     Route::middleware('permission:view_orders')->group(function () {
         Route::get('payments', [PaymentController::class, 'index']);
+        Route::get('payments/stats', [PaymentController::class, 'stats']);
         Route::get('payments/{payment}', [PaymentController::class, 'show']);
     });
 
