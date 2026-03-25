@@ -19,7 +19,7 @@ class AdminDashboardController extends Controller
         $today = now()->startOfDay();
         $activeStatuses = ['received', 'confirmed', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'];
 
-        $todayOrders = Order::whereDate('created_at', $today);
+        $todayOrders = Order::paymentConfirmed()->whereDate('created_at', $today);
         $completedToday = (clone $todayOrders)->whereIn('status', ['completed', 'delivered']);
         $cancelledToday = (clone $todayOrders)->where('status', 'cancelled');
         $activeNow = Order::paymentConfirmed()->whereIn('status', $activeStatuses);
@@ -30,7 +30,7 @@ class AdminDashboardController extends Controller
         $cancelledTodayCount = $cancelledToday->count();
 
         $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) use ($today) {
-            $branchTodayOrders = $branch->orders()->whereDate('created_at', $today);
+            $branchTodayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today);
             $branchTodayRevenue = (clone $branchTodayOrders)
                 ->whereIn('status', ['completed', 'delivered'])
                 ->sum('total_amount');

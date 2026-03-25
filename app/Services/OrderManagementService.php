@@ -16,8 +16,8 @@ class OrderManagementService
         $employee = $user->employee;
         $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
 
-        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory'])
-            ->paymentConfirmed();
+        // No payment filter here - admin sees all orders by default
+        $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory']);
 
         $employeeBranchIds = $employee?->branches()->pluck('branches.id');
 
@@ -82,6 +82,16 @@ class OrderManagementService
                     ->orWhereHas('customer.user', fn ($uq) => $uq->where('name', 'like', '%'.$search.'%')
                         ->orWhere('phone', 'like', '%'.$search.'%'));
             });
+        }
+
+        if (! empty($filters['payment_status'])) {
+            $statuses = is_array($filters['payment_status']) ? $filters['payment_status'] : [$filters['payment_status']];
+            $query->whereHas('payments', fn ($q) => $q->whereIn('payment_status', $statuses));
+        }
+
+        if (! empty($filters['payment_method'])) {
+            $methods = is_array($filters['payment_method']) ? $filters['payment_method'] : [$filters['payment_method']];
+            $query->whereHas('payments', fn ($q) => $q->whereIn('payment_method', $methods));
         }
 
         return $query->latest();

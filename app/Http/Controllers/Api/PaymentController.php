@@ -22,19 +22,23 @@ class PaymentController extends Controller
         $query = Payment::with(['order.customer.user']);
 
         if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
+            $query->where('payments.payment_status', $request->payment_status);
         }
 
         if ($request->has('payment_method')) {
-            $query->where('payment_method', $request->payment_method);
+            $query->where('payments.payment_method', $request->payment_method);
+        }
+
+        if ($request->has('branch_id')) {
+            $query->whereHas('order', fn ($q) => $q->where('branch_id', $request->branch_id));
         }
 
         if ($request->has('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
+            $query->whereDate('payments.created_at', '>=', $request->date_from);
         }
 
         if ($request->has('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
+            $query->whereDate('payments.created_at', '<=', $request->date_to);
         }
 
         $payments = $query->latest()->paginate($request->per_page ?? 15);
@@ -43,6 +47,52 @@ class PaymentController extends Controller
             PaymentResource::collection($payments)->response()->getData(true),
             'Payments retrieved successfully.'
         );
+    }
+
+    /**
+     * Return aggregated stats for the transactions dashboard cards.
+     */
+    public function stats(Request $request): JsonResponse
+    {
+        $query = Payment::query();
+
+        if ($request->has('branch_id')) {
+            $query->whereHas('order', fn ($q) => $q->where('branch_id', $request->branch_id));
+        }
+
+        if ($request->has('date_from')) {
+            $query->whereDate('payments.created_at', '>=', $request->date_from);
+        }
+
+        if ($request->has('date_to')) {
+            $query->whereDate('payments.created_at', '<=', $request->date_to);
+        }
+
+        $rows = (clone $query)
+            ->selectRaw('payment_status, COUNT(*) as count, SUM(amount) as total')
+            ->groupBy('payment_status')
+            ->get()
+            ->keyBy('payment_status');
+
+        // For no_charge, sum the order total_amount (payment amount is always 0)
+        $noChargeOrderTotal = (clone $query)
+            ->where('payments.payment_status', 'no_charge')
+            ->join('orders', 'payments.order_id', '=', 'orders.id')
+            ->sum('orders.total_amount');
+
+        $stat = fn (string $status) => [
+            'count' => (int) ($rows[$status]->count ?? 0),
+            'total' => (float) ($rows[$status]->total ?? 0),
+        ];
+
+        return response()->success([
+            'completed' => $stat('completed'),
+            'pending' => $stat('pending'),
+            'no_charge' => [
+                'count' => (int) ($rows['no_charge']->count ?? 0),
+                'total' => (float) $noChargeOrderTotal,
+            ],
+        ], 'Payment stats retrieved successfully.');
     }
 
     /**
