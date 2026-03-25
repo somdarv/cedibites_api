@@ -64,6 +64,26 @@ class OrderResource extends JsonResource
                 'name' => $this->customer->user?->name,
                 'phone' => $this->customer->user?->phone,
             ] : null,
+            'payments' => $this->whenLoaded('payments', fn () => $this->payments->map(fn ($payment) => [
+                'id' => $payment->id,
+                'payment_method' => $payment->payment_method,
+                'payment_status' => $payment->payment_status,
+                'amount' => (float) $payment->amount,
+                'transaction_id' => $payment->transaction_id,
+                'paid_at' => $payment->paid_at?->toIso8601String(),
+            ])),
+            'payment' => $this->whenLoaded('payments', function () {
+                $payment = $this->payments->first();
+
+                return $payment ? [
+                    'id' => $payment->id,
+                    'payment_method' => $payment->payment_method,
+                    'payment_status' => $payment->payment_status,
+                    'amount' => (float) $payment->amount,
+                    'transaction_id' => $payment->transaction_id,
+                    'paid_at' => $payment->paid_at?->toIso8601String(),
+                ] : null;
+            }),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

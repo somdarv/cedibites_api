@@ -23,7 +23,7 @@ class EmployeeOrderController extends Controller
     {
         $filters = $request->only([
             'branch_id', 'branch_name', 'staff_id', 'status', 'order_type', 'order_source',
-            'contact_phone', 'date_from', 'date_to', 'search',
+            'contact_phone', 'date_from', 'date_to', 'search', 'payment_status', 'payment_method',
         ]);
 
         $orders = $this->orderManagementService

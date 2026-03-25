@@ -101,12 +101,11 @@ class Order extends Model
     }
 
     /**
-     * Scope to only include orders with at least one completed payment.
-     * Used in all operational views (kitchen, order manager, staff, dashboards)
-     * so that unpaid/pending-payment orders are hidden until payment is confirmed.
+     * Scope to only include orders with at least one completed or no_charge payment.
+     * Used in operational views (kitchen, order manager) where only valid orders should appear.
      */
     public function scopePaymentConfirmed(Builder $query): void
     {
-        $query->whereHas('payments', fn (Builder $q) => $q->where('payment_status', 'completed'));
+        $query->whereHas('payments', fn (Builder $q) => $q->whereIn('payment_status', ['completed', 'no_charge']));
     }
 }
