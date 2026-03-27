@@ -17,11 +17,11 @@ class BranchSeeder extends Seeder
             [
                 'name' => 'Ashaiman',
                 'area' => 'Ashaiman',
-                'address' => 'Ashaiman, Greater Accra, Ghana',
-                'phone' => '+233500000000',
-                'email' => 'ashaiman@cedibites.com',
-                'latitude' => 5.6800,
-                'longitude' => -0.0550,
+                'address' => 'Nii Tetteh Amui Street, Tema',
+                'phone' => '+233548162282',
+                'email' => 'info@cedibites.com',
+                'latitude' => 5.60370000,
+                'longitude' => -0.18700000,
                 'delivery' => [
                     'base_delivery_fee' => 15.00,
                     'per_km_fee' => 3.00,
