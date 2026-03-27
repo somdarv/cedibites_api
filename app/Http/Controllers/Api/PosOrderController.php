@@ -202,6 +202,7 @@ class PosOrderController extends Controller
 
             // Load relationships for response
             $order->load(['branch', 'assignedEmployee.user', 'items.menuItem', 'items.menuItemOption.media', 'payments']);
+            $order->makeHidden(['tax_rate', 'tax_amount']);
 
             // For mobile money, include payment ID so the frontend can poll for status
             $responseData = ['data' => $order];
