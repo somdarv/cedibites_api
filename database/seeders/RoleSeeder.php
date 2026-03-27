@@ -117,12 +117,12 @@ class RoleSeeder extends Seeder
             Permission::AccessOrderManager->value,
         ]);
 
-        // Create Employee role
-        $employee = Role::updateOrCreate(
-            ['name' => RoleEnum::Employee->value, 'guard_name' => 'api'],
-            ['name' => RoleEnum::Employee->value, 'guard_name' => 'api']
+        // Create Sales Staff role (replaces legacy "employee")
+        $salesStaff = Role::updateOrCreate(
+            ['name' => RoleEnum::SalesStaff->value, 'guard_name' => 'api'],
+            ['name' => RoleEnum::SalesStaff->value, 'guard_name' => 'api']
         );
-        $employee->syncPermissions([
+        $salesStaff->syncPermissions([
             Permission::ViewOrders->value,
             Permission::CreateOrders->value,
             Permission::UpdateOrders->value,
@@ -134,5 +134,13 @@ class RoleSeeder extends Seeder
             Permission::ViewMySales->value,
             Permission::ViewMyShifts->value,
         ]);
+
+        // Keep legacy "employee" role aligned for backward compatibility.
+        $legacyEmployee = Role::where('name', RoleEnum::Employee->value)
+            ->where('guard_name', 'api')
+            ->first();
+        if ($legacyEmployee instanceof Role) {
+            $legacyEmployee->syncPermissions($salesStaff->permissions->pluck('name')->all());
+        }
     }
 }
