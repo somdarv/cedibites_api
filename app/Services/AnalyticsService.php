@@ -325,6 +325,7 @@ class AnalyticsService
         $query = Order::query()->with('branch');
 
         $this->applyDateFilters($query, $filters);
+        $this->applyBranchFilter($query, $filters);
 
         $branches = $query
             ->select(

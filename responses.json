@@ -1,0 +1,589 @@
+{
+    "online_checkout_initiation": [
+        {
+            "checkoutUrl": "https:\/\/pay.hubtel.com\/503f8461cd5b4974926fef309ba676cd",
+            "checkoutId": "503f8461cd5b4974926fef309ba676cd",
+            "clientReference": "A003",
+            "message": "",
+            "checkoutDirectUrl": "https:\/\/pay.hubtel.com\/503f8461cd5b4974926fef309ba676cd\/direct"
+        },
+        {
+            "checkoutUrl": "https:\/\/pay.hubtel.com\/cda35327f15047229b3f45a4fd47197b",
+            "checkoutId": "cda35327f15047229b3f45a4fd47197b",
+            "clientReference": "A010",
+            "message": "",
+            "checkoutDirectUrl": "https:\/\/pay.hubtel.com\/cda35327f15047229b3f45a4fd47197b\/direct"
+        },
+        {
+            "checkoutUrl": "https:\/\/pay.hubtel.com\/45da938361bd49aba73d818397d7e597",
+            "checkoutId": "45da938361bd49aba73d818397d7e597",
+            "clientReference": "A016",
+            "message": "",
+            "checkoutDirectUrl": "https:\/\/pay.hubtel.com\/45da938361bd49aba73d818397d7e597\/direct"
+        }
+    ],
+    "online_checkout_callback_success": [
+        {
+            "ResponseCode": "0000",
+            "Status": "Success",
+            "Data": {
+                "CheckoutId": "45da938361bd49aba73d818397d7e597",
+                "SalesInvoiceId": "042dd9692abd4dba86e40f7efed32310",
+                "ClientReference": "A016",
+                "Status": "Success",
+                "Amount": 0.11,
+                "CustomerPhoneNumber": "233248078618",
+                "PaymentDetails": {
+                    "MobileMoneyNumber": "233248078618",
+                    "PaymentType": "mobilemoney",
+                    "Channel": "mtn-gh"
+                },
+                "Description": "The MTN Mobile Money payment has been approved and processed successfully."
+            }
+        }
+    ],
+    "online_checkout_callback_failed": [
+        {
+            "ResponseCode": "2001",
+            "Status": "Failed",
+            "Data": {
+                "CheckoutId": "503f8461cd5b4974926fef309ba676cd",
+                "SalesInvoiceId": "5db5e17d00f14f9da26aaf63cbb6f62d",
+                "ClientReference": "A003",
+                "Status": "Failed",
+                "Amount": 0.31,
+                "CustomerPhoneNumber": "233592123054",
+                "PaymentDetails": {
+                    "MobileMoneyNumber": "233592123054",
+                    "PaymentType": "mobilemoney",
+                    "Channel": "mtn-gh"
+                },
+                "Description": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions"
+            }
+        }
+    ],
+    "rmp_payment_initiation": [
+        {
+            "TransactionId": "4a8d5ca0308347acae4f146a112df2e9",
+            "Description": "POS Order A002 - Accra Central",
+            "ClientReference": "A002",
+            "Amount": 0.11,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.1,
+            "AmountCharged": 0.11,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "0000",
+                "Message": "success",
+                "Data": {
+                    "Amount": 0.11,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.1,
+                    "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                    "ClientReference": "A002",
+                    "TransactionId": "4a8d5ca0308347acae4f146a112df2e9",
+                    "ExternalTransactionId": "77860414589",
+                    "AmountCharged": 0.11,
+                    "OrderId": "4a8d5ca0308347acae4f146a112df2e9",
+                    "PaymentDate": "2026-03-24T15:54:55.3923745Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "229b81c6f3b7447693295a3a87df0acc",
+            "Description": "POS Order A005 - Accra Central",
+            "ClientReference": "A005",
+            "Amount": 0.31,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.3,
+            "AmountCharged": 0.31,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "2001",
+                "Message": "failed",
+                "Data": {
+                    "Amount": 0.31,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.3,
+                    "Description": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions",
+                    "ClientReference": "A005",
+                    "TransactionId": "229b81c6f3b7447693295a3a87df0acc",
+                    "ExternalTransactionId": null,
+                    "AmountCharged": 0.31,
+                    "OrderId": "229b81c6f3b7447693295a3a87df0acc",
+                    "PaymentDate": "2026-03-24T20:41:04.7095042Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "b2fc4cbd7c8e4dc89a34cc63848deb2b",
+            "Description": "POS Order A011 - Accra Central",
+            "ClientReference": "A011",
+            "Amount": 0.11,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.1,
+            "AmountCharged": 0.11,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "0000",
+                "Message": "success",
+                "Data": {
+                    "Amount": 0.11,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.1,
+                    "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                    "ClientReference": "A011",
+                    "TransactionId": "b2fc4cbd7c8e4dc89a34cc63848deb2b",
+                    "ExternalTransactionId": "77910305043",
+                    "AmountCharged": 0.11,
+                    "OrderId": "b2fc4cbd7c8e4dc89a34cc63848deb2b",
+                    "PaymentDate": "2026-03-25T11:09:39.5343114Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "b8e63e68c4f041b58291255e120939ab",
+            "Description": "POS Order A012 - Accra Central",
+            "ClientReference": "A012",
+            "Amount": 0.11,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.1,
+            "AmountCharged": 0.11,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "0000",
+                "Message": "success",
+                "Data": {
+                    "Amount": 0.11,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.1,
+                    "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                    "ClientReference": "A012",
+                    "TransactionId": "b8e63e68c4f041b58291255e120939ab",
+                    "ExternalTransactionId": "77910614557",
+                    "AmountCharged": 0.11,
+                    "OrderId": "b8e63e68c4f041b58291255e120939ab",
+                    "PaymentDate": "2026-03-25T11:14:32.4233969Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "422f6ca06a6e45bf8e801917fe6ffbf5",
+            "Description": "POS Order A013 - Accra Central",
+            "ClientReference": "A013",
+            "Amount": 0.31,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.3,
+            "AmountCharged": 0.31,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "0000",
+                "Message": "success",
+                "Data": {
+                    "Amount": 0.31,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.3,
+                    "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                    "ClientReference": "A013",
+                    "TransactionId": "422f6ca06a6e45bf8e801917fe6ffbf5",
+                    "ExternalTransactionId": "77910670791",
+                    "AmountCharged": 0.31,
+                    "OrderId": "422f6ca06a6e45bf8e801917fe6ffbf5",
+                    "PaymentDate": "2026-03-25T11:15:27.1209893Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "47c410d8c6f441edbcc4b1f110c90537",
+            "Description": "POS Order A014 - Accra Central",
+            "ClientReference": "A014",
+            "Amount": 0.21,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.2,
+            "AmountCharged": 0.21,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "2001",
+                "Message": "failed",
+                "Data": {
+                    "Amount": 0.21,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.2,
+                    "Description": "Transaction Failed",
+                    "ClientReference": "A014",
+                    "TransactionId": "47c410d8c6f441edbcc4b1f110c90537",
+                    "ExternalTransactionId": "77910701792",
+                    "AmountCharged": 0.21,
+                    "OrderId": "47c410d8c6f441edbcc4b1f110c90537",
+                    "PaymentDate": "2026-03-25T11:16:05.3841569Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "c045e7b1d0204ec9bdf2922b427255b1",
+            "Description": "POS Order A015 - Accra Central",
+            "ClientReference": "A015",
+            "Amount": 0.31,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.3,
+            "AmountCharged": 0.31,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "2001",
+                "Message": "failed",
+                "Data": {
+                    "Amount": 0.31,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.3,
+                    "Description": "Transaction Failed",
+                    "ClientReference": "A015",
+                    "TransactionId": "c045e7b1d0204ec9bdf2922b427255b1",
+                    "ExternalTransactionId": "77910802755",
+                    "AmountCharged": 0.31,
+                    "OrderId": "c045e7b1d0204ec9bdf2922b427255b1",
+                    "PaymentDate": "2026-03-25T11:17:41.5555323Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "003676e7eb3c4fdeb367fbb5ebc710e1",
+            "Description": "POS Order A017 - Accra Central",
+            "ClientReference": "A017",
+            "Amount": 0.31,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.3,
+            "AmountCharged": 0.31,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "2001",
+                "Message": "failed",
+                "Data": {
+                    "Amount": 0.31,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.3,
+                    "Description": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions",
+                    "ClientReference": "A017",
+                    "TransactionId": "003676e7eb3c4fdeb367fbb5ebc710e1",
+                    "ExternalTransactionId": null,
+                    "AmountCharged": 0.31,
+                    "OrderId": "003676e7eb3c4fdeb367fbb5ebc710e1",
+                    "PaymentDate": "2026-03-25T12:14:58.7834045Z"
+                }
+            }
+        },
+        {
+            "TransactionId": "b277a3272e3c421cac2d85faf9f4f0c7",
+            "Description": "POS Order A018 - Accra Central",
+            "ClientReference": "A018",
+            "Amount": 0.31,
+            "Charges": 0.01,
+            "AmountAfterCharges": 0.3,
+            "AmountCharged": 0.31,
+            "DeliveryFee": 0,
+            "InvoiceNumber": null,
+            "channel": "mtn-gh",
+            "rmp_callback": {
+                "ResponseCode": "2001",
+                "Message": "failed",
+                "Data": {
+                    "Amount": 0.31,
+                    "Charges": 0.01,
+                    "AmountAfterCharges": 0.3,
+                    "Description": "Transaction Failed",
+                    "ClientReference": "A018",
+                    "TransactionId": "b277a3272e3c421cac2d85faf9f4f0c7",
+                    "ExternalTransactionId": "77914430840",
+                    "AmountCharged": 0.31,
+                    "OrderId": "b277a3272e3c421cac2d85faf9f4f0c7",
+                    "PaymentDate": "2026-03-25T12:16:19.2859191Z"
+                }
+            }
+        }
+    ],
+    "rmp_callback_success": [
+        {
+            "ResponseCode": "0000",
+            "Message": "success",
+            "Data": {
+                "Amount": 0.11,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.1,
+                "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                "ClientReference": "A002",
+                "TransactionId": "4a8d5ca0308347acae4f146a112df2e9",
+                "ExternalTransactionId": "77860414589",
+                "AmountCharged": 0.11,
+                "OrderId": "4a8d5ca0308347acae4f146a112df2e9",
+                "PaymentDate": "2026-03-24T15:54:55.3923745Z"
+            }
+        },
+        {
+            "ResponseCode": "0000",
+            "Message": "success",
+            "Data": {
+                "Amount": 0.11,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.1,
+                "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                "ClientReference": "A011",
+                "TransactionId": "b2fc4cbd7c8e4dc89a34cc63848deb2b",
+                "ExternalTransactionId": "77910305043",
+                "AmountCharged": 0.11,
+                "OrderId": "b2fc4cbd7c8e4dc89a34cc63848deb2b",
+                "PaymentDate": "2026-03-25T11:09:39.5343114Z"
+            }
+        },
+        {
+            "ResponseCode": "0000",
+            "Message": "success",
+            "Data": {
+                "Amount": 0.11,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.1,
+                "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                "ClientReference": "A012",
+                "TransactionId": "b8e63e68c4f041b58291255e120939ab",
+                "ExternalTransactionId": "77910614557",
+                "AmountCharged": 0.11,
+                "OrderId": "b8e63e68c4f041b58291255e120939ab",
+                "PaymentDate": "2026-03-25T11:14:32.4233969Z"
+            }
+        },
+        {
+            "ResponseCode": "0000",
+            "Message": "success",
+            "Data": {
+                "Amount": 0.31,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.3,
+                "Description": "The MTN Mobile Money payment has been approved and processed successfully.",
+                "ClientReference": "A013",
+                "TransactionId": "422f6ca06a6e45bf8e801917fe6ffbf5",
+                "ExternalTransactionId": "77910670791",
+                "AmountCharged": 0.31,
+                "OrderId": "422f6ca06a6e45bf8e801917fe6ffbf5",
+                "PaymentDate": "2026-03-25T11:15:27.1209893Z"
+            }
+        }
+    ],
+    "rmp_callback_failed": [
+        {
+            "ResponseCode": "2001",
+            "Message": "failed",
+            "Data": {
+                "Amount": 0.31,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.3,
+                "Description": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions",
+                "ClientReference": "A005",
+                "TransactionId": "229b81c6f3b7447693295a3a87df0acc",
+                "ExternalTransactionId": null,
+                "AmountCharged": 0.31,
+                "OrderId": "229b81c6f3b7447693295a3a87df0acc",
+                "PaymentDate": "2026-03-24T20:41:04.7095042Z"
+            }
+        },
+        {
+            "ResponseCode": "2001",
+            "Message": "failed",
+            "Data": {
+                "Amount": 0.21,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.2,
+                "Description": "Transaction Failed",
+                "ClientReference": "A014",
+                "TransactionId": "47c410d8c6f441edbcc4b1f110c90537",
+                "ExternalTransactionId": "77910701792",
+                "AmountCharged": 0.21,
+                "OrderId": "47c410d8c6f441edbcc4b1f110c90537",
+                "PaymentDate": "2026-03-25T11:16:05.3841569Z"
+            }
+        },
+        {
+            "ResponseCode": "2001",
+            "Message": "failed",
+            "Data": {
+                "Amount": 0.31,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.3,
+                "Description": "Transaction Failed",
+                "ClientReference": "A015",
+                "TransactionId": "c045e7b1d0204ec9bdf2922b427255b1",
+                "ExternalTransactionId": "77910802755",
+                "AmountCharged": 0.31,
+                "OrderId": "c045e7b1d0204ec9bdf2922b427255b1",
+                "PaymentDate": "2026-03-25T11:17:41.5555323Z"
+            }
+        },
+        {
+            "ResponseCode": "2001",
+            "Message": "failed",
+            "Data": {
+                "Amount": 0.31,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.3,
+                "Description": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions",
+                "ClientReference": "A017",
+                "TransactionId": "003676e7eb3c4fdeb367fbb5ebc710e1",
+                "ExternalTransactionId": null,
+                "AmountCharged": 0.31,
+                "OrderId": "003676e7eb3c4fdeb367fbb5ebc710e1",
+                "PaymentDate": "2026-03-25T12:14:58.7834045Z"
+            }
+        },
+        {
+            "ResponseCode": "2001",
+            "Message": "failed",
+            "Data": {
+                "Amount": 0.31,
+                "Charges": 0.01,
+                "AmountAfterCharges": 0.3,
+                "Description": "Transaction Failed",
+                "ClientReference": "A018",
+                "TransactionId": "b277a3272e3c421cac2d85faf9f4f0c7",
+                "ExternalTransactionId": "77914430840",
+                "AmountCharged": 0.31,
+                "OrderId": "b277a3272e3c421cac2d85faf9f4f0c7",
+                "PaymentDate": "2026-03-25T12:16:19.2859191Z"
+            }
+        }
+    ],
+    "momo_verification": [
+        {
+            "phone": "024****18",
+            "channel": "mtn-gh",
+            "is_registered": true,
+            "sample_response": {
+                "isRegistered": true,
+                "name": "John Doe",
+                "status": "active",
+                "profile": "registered"
+            }
+        },
+        {
+            "phone": "024****18",
+            "channel": "mtn-gh",
+            "is_registered": true,
+            "sample_response": {
+                "isRegistered": true,
+                "name": "John Doe",
+                "status": "active",
+                "profile": "registered"
+            }
+        },
+        {
+            "phone": "024****18",
+            "channel": "mtn-gh",
+            "is_registered": true,
+            "sample_response": {
+                "isRegistered": true,
+                "name": "John Doe",
+                "status": "active",
+                "profile": "registered"
+            }
+        }
+    ],
+    "sms_single": [
+        {
+            "messageId": "696a80e8-b394-4de1-bdfc-503ad8d6c93e",
+            "recipient_count": 1,
+            "sample_response": {
+                "messageId": "696a80e8-b394-4de1-bdfc-503ad8d6c93e",
+                "status": 0,
+                "responseCode": 0
+            }
+        },
+        {
+            "messageId": "4d7039b7-9649-4595-a931-67af25cc492b",
+            "recipient_count": 1,
+            "sample_response": {
+                "messageId": "4d7039b7-9649-4595-a931-67af25cc492b",
+                "status": 0,
+                "responseCode": 0
+            }
+        }
+    ],
+    "sms_batch": [],
+    "status_check_response": [
+        {
+            "description": "Status check for successful payment",
+            "request": {
+                "method": "GET",
+                "url": "https://api-txnstatus.hubtel.com/transactions/2038092/status?clientReference=A016",
+                "headers": {
+                    "Authorization": "Basic [base64_encoded_credentials]"
+                }
+            },
+            "response": {
+                "transactionId": "45da938361bd49aba73d818397d7e597",
+                "externalTransactionId": "042dd9692abd4dba86e40f7efed32310",
+                "amount": 0.11,
+                "charges": 0.00,
+                "status": "Paid",
+                "clientReference": "A016",
+                "description": "Payment for Order #A016",
+                "customerPhoneNumber": "233248078618",
+                "paymentType": "mobilemoney",
+                "channel": "mtn-gh"
+            }
+        },
+        {
+            "description": "Status check for pending payment",
+            "request": {
+                "method": "GET",
+                "url": "https://api-txnstatus.hubtel.com/transactions/2038092/status?clientReference=A010",
+                "headers": {
+                    "Authorization": "Basic [base64_encoded_credentials]"
+                }
+            },
+            "response": {
+                "transactionId": "cda35327f15047229b3f45a4fd47197b",
+                "externalTransactionId": null,
+                "amount": 0.20,
+                "charges": 0.00,
+                "status": "Unpaid",
+                "clientReference": "A010",
+                "description": "Payment for Order #A010"
+            }
+        },
+        {
+            "description": "Status check for failed payment",
+            "request": {
+                "method": "GET",
+                "url": "https://api-txnstatus.hubtel.com/transactions/2038092/status?clientReference=A003",
+                "headers": {
+                    "Authorization": "Basic [base64_encoded_credentials]"
+                }
+            },
+            "response": {
+                "transactionId": "503f8461cd5b4974926fef309ba676cd",
+                "externalTransactionId": "5db5e17d00f14f9da26aaf63cbb6f62d",
+                "amount": 0.31,
+                "charges": 0.00,
+                "status": "Failed",
+                "clientReference": "A003",
+                "description": "Payment for Order #A003",
+                "customerPhoneNumber": "233592123054",
+                "paymentType": "mobilemoney",
+                "channel": "mtn-gh",
+                "failureReason": "The MTN Mobile Money user has reached counter or balance limits, has insufficient funds or is missing permissions"
+            }
+        }
+    ]
+}

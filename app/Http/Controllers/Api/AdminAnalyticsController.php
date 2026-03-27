@@ -104,7 +104,7 @@ class AdminAnalyticsController extends Controller
      */
     public function branchPerformance(Request $request): JsonResponse
     {
-        $filters = $request->only(['date_from', 'date_to']);
+        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
 
         $analytics = $this->analyticsService->getBranchPerformanceAnalytics($filters);
 
