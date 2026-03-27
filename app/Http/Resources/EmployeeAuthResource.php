@@ -16,7 +16,7 @@ class EmployeeAuthResource extends JsonResource
     public function toArray(Request $request): array
     {
         $roles = $this->getRoleNames();
-        $role = $roles->first() ?? 'employee';
+        $role = $roles->first() ?? 'sales_staff';
 
         return [
             'id' => (string) $this->employee->id,
