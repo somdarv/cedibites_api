@@ -54,6 +54,7 @@ class RoleController extends Controller
             'branch_partner' => 'Branch Partner',
             'manager' => 'Branch Manager',
             'call_center' => 'Call Center',
+            'sales_staff' => 'Sales Staff',
             'kitchen' => 'Kitchen Staff',
             'rider' => 'Delivery Rider',
             'employee' => 'Employee',
