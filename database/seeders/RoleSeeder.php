@@ -10,6 +10,16 @@ use Spatie\Permission\Models\Role;
 class RoleSeeder extends Seeder
 {
     /**
+     * Add permissions without removing any existing ones.
+     *
+     * @param  array<int, string>  $permissions
+     */
+    private function addPermissions(Role $role, array $permissions): void
+    {
+        $role->givePermissionTo($permissions);
+    }
+
+    /**
      * Run the database seeder.
      */
     public function run(): void
@@ -19,7 +29,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::SuperAdmin->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::SuperAdmin->value, 'guard_name' => 'api']
         );
-        $superAdmin->syncPermissions(
+        $this->addPermissions($superAdmin,
             array_map(fn ($permission) => $permission->value, Permission::cases())
         );
 
@@ -28,7 +38,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::Admin->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Admin->value, 'guard_name' => 'api']
         );
-        $admin->syncPermissions(
+        $this->addPermissions($admin,
             array_map(fn ($permission) => $permission->value, Permission::cases())
         );
 
@@ -37,7 +47,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::BranchPartner->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::BranchPartner->value, 'guard_name' => 'api']
         );
-        $branchPartner->syncPermissions([
+        $this->addPermissions($branchPartner, [
             Permission::ViewOrders->value,
             Permission::ViewMenu->value,
             Permission::ViewBranches->value,
@@ -52,7 +62,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::Manager->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Manager->value, 'guard_name' => 'api']
         );
-        $manager->syncPermissions([
+        $this->addPermissions($manager, [
             Permission::ViewOrders->value,
             Permission::CreateOrders->value,
             Permission::UpdateOrders->value,
@@ -80,7 +90,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::CallCenter->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::CallCenter->value, 'guard_name' => 'api']
         );
-        $callCenter->syncPermissions([
+        $this->addPermissions($callCenter, [
             Permission::ViewOrders->value,
             Permission::CreateOrders->value,
             Permission::UpdateOrders->value,
@@ -98,7 +108,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::Kitchen->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Kitchen->value, 'guard_name' => 'api']
         );
-        $kitchen->syncPermissions([
+        $this->addPermissions($kitchen, [
             Permission::ViewOrders->value,
             Permission::UpdateOrders->value,
             Permission::ViewMenu->value,
@@ -110,7 +120,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::Rider->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Rider->value, 'guard_name' => 'api']
         );
-        $rider->syncPermissions([
+        $this->addPermissions($rider, [
             Permission::ViewOrders->value,
             Permission::UpdateOrders->value,
             Permission::ViewCustomers->value,
@@ -122,7 +132,7 @@ class RoleSeeder extends Seeder
             ['name' => RoleEnum::SalesStaff->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::SalesStaff->value, 'guard_name' => 'api']
         );
-        $salesStaff->syncPermissions([
+        $this->addPermissions($salesStaff, [
             Permission::ViewOrders->value,
             Permission::CreateOrders->value,
             Permission::UpdateOrders->value,
@@ -131,6 +141,8 @@ class RoleSeeder extends Seeder
             Permission::ViewCustomers->value,
             Permission::AccessSalesPortal->value,
             Permission::AccessPos->value,
+            Permission::AccessKitchen->value,
+            Permission::AccessOrderManager->value,
             Permission::ViewMySales->value,
             Permission::ViewMyShifts->value,
         ]);
@@ -140,7 +152,7 @@ class RoleSeeder extends Seeder
             ->where('guard_name', 'api')
             ->first();
         if ($legacyEmployee instanceof Role) {
-            $legacyEmployee->syncPermissions($salesStaff->permissions->pluck('name')->all());
+            $this->addPermissions($legacyEmployee, $salesStaff->permissions->pluck('name')->all());
         }
     }
 }
