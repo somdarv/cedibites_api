@@ -51,6 +51,7 @@ class OrderResource extends JsonResource
                 'unit_price' => (float) $item->unit_price,
                 'subtotal' => (float) $item->subtotal,
                 'special_instructions' => $item->special_instructions,
+                'menu_item_snapshot' => $item->menu_item_snapshot,
                 'menu_item' => [
                     'id' => $item->menuItem?->id,
                     'name' => $item->menuItem?->name,
