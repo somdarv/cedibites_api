@@ -23,7 +23,6 @@ class OrderResource extends JsonResource
             'payment_method' => $this->payment_method,
             'subtotal' => (float) $this->subtotal,
             'delivery_fee' => (float) $this->delivery_fee,
-            'tax_amount' => (float) $this->tax_amount,
             'total_amount' => (float) $this->total_amount,
             'contact_name' => $this->contact_name,
             'contact_phone' => $this->contact_phone,
@@ -52,6 +51,7 @@ class OrderResource extends JsonResource
                 'unit_price' => (float) $item->unit_price,
                 'subtotal' => (float) $item->subtotal,
                 'special_instructions' => $item->special_instructions,
+                'menu_item_snapshot' => $item->menu_item_snapshot,
                 'menu_item' => [
                     'id' => $item->menuItem?->id,
                     'name' => $item->menuItem?->name,

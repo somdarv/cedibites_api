@@ -12,6 +12,7 @@ class EmployeeResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $user = $this->user;
         $hasBranches = $this->relationLoaded('branches');
         $branchIds = $hasBranches ? $this->branches->pluck('id')->values()->all() : [];
         $branchList = $hasBranches ? $this->branches->map(fn ($b) => [
@@ -22,8 +23,8 @@ class EmployeeResource extends JsonResource
 
         // Get user permissions if roles are loaded with permissions
         $permissions = [];
-        if ($this->user->relationLoaded('roles')) {
-            foreach ($this->user->roles as $role) {
+        if ($user && $user->relationLoaded('roles')) {
+            foreach ($user->roles as $role) {
                 if ($role->relationLoaded('permissions')) {
                     $permissions = array_merge($permissions, $role->permissions->pluck('name')->toArray());
                 }
@@ -31,8 +32,8 @@ class EmployeeResource extends JsonResource
         }
 
         // Add direct user permissions
-        if ($this->user->relationLoaded('permissions')) {
-            $permissions = array_merge($permissions, $this->user->permissions->pluck('name')->toArray());
+        if ($user && $user->relationLoaded('permissions')) {
+            $permissions = array_merge($permissions, $user->permissions->pluck('name')->toArray());
         }
 
         return [
@@ -52,11 +53,11 @@ class EmployeeResource extends JsonResource
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
             'user' => [
-                'id' => $this->user->id,
-                'name' => $this->user->name,
-                'email' => $this->user->email,
-                'phone' => $this->user->phone,
-                'roles' => $this->user->roles->pluck('name'),
+                'id' => $user?->id,
+                'name' => $user?->name,
+                'email' => $user?->email,
+                'phone' => $user?->phone,
+                'roles' => $user?->roles?->pluck('name') ?? [],
                 'permissions' => array_unique($permissions),
             ],
             'branch_ids' => $branchIds,
