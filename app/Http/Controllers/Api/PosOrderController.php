@@ -75,6 +75,23 @@ class PosOrderController extends Controller
                     $deliveryNote .= "\n{$customerNotes}";
                 }
 
+                // Find or create a customer record by phone so POS customers
+                // appear in the admin customers list.
+                $contactPhone = $request->validated('contact_phone');
+                $contactName  = $request->validated('contact_name');
+
+                $posUser = \App\Models\User::firstOrCreate(
+                    ['phone' => $contactPhone],
+                    ['name'  => $contactName]
+                );
+
+                if (! $posUser->customer) {
+                    $posUser->customer()->create(['is_guest' => true]);
+                    $posUser->load('customer');
+                }
+
+                $posCustomerId = $posUser->customer->id;
+
                 // Create order record
                 $order = \App\Models\Order::create([
                     'order_number' => $orderNumber,
@@ -82,8 +99,8 @@ class PosOrderController extends Controller
                     'assigned_employee_id' => $employee->id,
                     'order_type' => 'pickup',
                     'order_source' => 'pos',
-                    'contact_name' => $request->validated('contact_name'),
-                    'contact_phone' => $request->validated('contact_phone'),
+                    'contact_name' => $contactName,
+                    'contact_phone' => $contactPhone,
                     'delivery_note' => $deliveryNote,
                     'subtotal' => $totals['subtotal'],
                     'delivery_fee' => $totals['delivery_fee'],
@@ -91,7 +108,7 @@ class PosOrderController extends Controller
                     'tax_amount' => $totals['tax_amount'],
                     'total_amount' => $totals['total_amount'],
                     'status' => 'received',
-                    'customer_id' => null,
+                    'customer_id' => $posCustomerId,
                     'delivery_address' => null,
                     'delivery_latitude' => null,
                     'delivery_longitude' => null,
@@ -160,7 +177,7 @@ class PosOrderController extends Controller
                             'payment_method' => $paymentMethod,
                             'amount' => $totals['total_amount'],
                             'payment_status' => 'pending',
-                            'customer_id' => null,
+                            'customer_id' => $posCustomerId,
                         ]);
                     }
                 } elseif ($paymentMethod === 'no_charge') {
@@ -169,7 +186,7 @@ class PosOrderController extends Controller
                         'payment_method' => 'no_charge',
                         'amount' => 0,
                         'payment_status' => 'no_charge',
-                        'customer_id' => null,
+                        'customer_id' => $posCustomerId,
                     ]);
                 } else {
                     // For cash, card, wallet, ghqr - mark as completed immediately
@@ -179,7 +196,7 @@ class PosOrderController extends Controller
                         'amount' => $totals['total_amount'],
                         'payment_status' => 'completed',
                         'paid_at' => now(),
-                        'customer_id' => null,
+                        'customer_id' => $posCustomerId,
                     ]);
                 }
 

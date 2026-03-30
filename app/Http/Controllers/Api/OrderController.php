@@ -67,6 +67,25 @@ class OrderController extends Controller
     {
         $identity = $this->resolveCartIdentity($request);
 
+        // For guest orders, find or create a customer record by phone so guest
+        // customers appear in the admin customers list.
+        $resolvedCustomerId = $identity['customer_id'];
+        if ($resolvedCustomerId === null) {
+            $validated = $request->validated();
+            $guestPhone = $validated['customer_phone'] ?? null;
+            if ($guestPhone) {
+                $guestUser = User::firstOrCreate(
+                    ['phone' => $guestPhone],
+                    ['name'  => $validated['customer_name'] ?? 'Customer']
+                );
+                if (! $guestUser->customer) {
+                    $guestUser->customer()->create(['is_guest' => true]);
+                    $guestUser->load('customer');
+                }
+                $resolvedCustomerId = $guestUser->customer->id;
+            }
+        }
+
         $cartQuery = Cart::with(['items.menuItem', 'items.menuItemOption', 'branch'])
             ->where('status', 'active');
 
@@ -100,7 +119,7 @@ class OrderController extends Controller
 
             $order = Order::create([
                 'order_number' => $orderNumber,
-                'customer_id' => $identity['customer_id'],
+                'customer_id' => $resolvedCustomerId,
                 'branch_id' => (int) $validated['branch_id'],
                 'order_type' => $validated['order_type'],
                 'order_source' => 'online',
@@ -150,7 +169,7 @@ class OrderController extends Controller
 
             Payment::create([
                 'order_id' => $order->id,
-                'customer_id' => $identity['customer_id'],
+                'customer_id' => $resolvedCustomerId,
                 'payment_method' => $paymentMethod,
                 'payment_status' => $paymentStatus,
                 'amount' => $totalAmount,
