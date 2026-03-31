@@ -183,18 +183,18 @@ class OrderController extends Controller
             }
 
             $paymentMethod = $validated['payment_method'];
-            // Mark all online order payments as completed immediately — there is no
-            // real-time payment gateway for online orders, so we treat declaration
-            // of payment method as confirmation of intent to pay.
-            $paymentStatus = 'completed';
+            // Mobile money goes through Hubtel — create as pending so initiateHubtelPayment
+            // can proceed. All other methods (cash_on_delivery, card, etc.) are completed
+            // immediately since no gateway confirmation is needed.
+            $isMomo = $paymentMethod === 'mobile_money';
 
             Payment::create([
                 'order_id' => $order->id,
                 'customer_id' => $resolvedCustomerId,
                 'payment_method' => $paymentMethod,
-                'payment_status' => $paymentStatus,
+                'payment_status' => $isMomo ? 'pending' : 'completed',
                 'amount' => $totalAmount,
-                'paid_at' => now(),
+                'paid_at' => $isMomo ? null : now(),
             ]);
 
             $cart->update(['status' => 'completed']);
