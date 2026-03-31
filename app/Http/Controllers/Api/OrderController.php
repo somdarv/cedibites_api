@@ -67,6 +67,25 @@ class OrderController extends Controller
     {
         $identity = $this->resolveCartIdentity($request);
 
+        // For guest orders, find or create a customer record by phone so guest
+        // customers appear in the admin customers list.
+        $resolvedCustomerId = $identity['customer_id'];
+        if ($resolvedCustomerId === null) {
+            $validated = $request->validated();
+            $guestPhone = $validated['customer_phone'] ?? null;
+            if ($guestPhone) {
+                $guestUser = User::firstOrCreate(
+                    ['phone' => $guestPhone],
+                    ['name'  => $validated['customer_name'] ?? 'Customer']
+                );
+                if (! $guestUser->customer) {
+                    $guestUser->customer()->create(['is_guest' => true]);
+                    $guestUser->load('customer');
+                }
+                $resolvedCustomerId = $guestUser->customer->id;
+            }
+        }
+
         $cartQuery = Cart::with(['items.menuItem', 'items.menuItemOption', 'branch'])
             ->where('status', 'active');
 
@@ -100,7 +119,7 @@ class OrderController extends Controller
 
             $order = Order::create([
                 'order_number' => $orderNumber,
-                'customer_id' => $identity['customer_id'],
+                'customer_id' => $resolvedCustomerId,
                 'branch_id' => (int) $validated['branch_id'],
                 'order_type' => $validated['order_type'],
                 'order_source' => 'online',
@@ -150,7 +169,7 @@ class OrderController extends Controller
 
             Payment::create([
                 'order_id' => $order->id,
-                'customer_id' => $identity['customer_id'],
+                'customer_id' => $resolvedCustomerId,
                 'payment_method' => $paymentMethod,
                 'payment_status' => $paymentStatus,
                 'amount' => $totalAmount,
@@ -292,10 +311,8 @@ class OrderController extends Controller
      */
     public function cancel(Request $request, Order $order): JsonResponse
     {
-        $terminal = ['delivered', 'completed', 'cancelled'];
-
-        if (in_array($order->status, $terminal)) {
-            return response()->error('Order cannot be cancelled in its current status', 422);
+        if ($order->status === 'cancelled') {
+            return response()->error('Order is already cancelled', 422);
         }
 
         $validated = $request->validate([
@@ -307,6 +324,24 @@ class OrderController extends Controller
             'cancelled_at' => now(),
             'cancelled_reason' => $validated['reason'] ?? null,
         ]);
+
+        // Send SMS + notification to customer
+        try {
+            $notifiable = $order->customer?->user;
+            if (! $notifiable && $order->contact_phone) {
+                // Guest / walk-in — send directly via SMS channel using a plain notifiable
+                $notifiable = new \Illuminate\Notifications\AnonymousNotifiable;
+                $notifiable->route('sms', $order->contact_phone);
+            }
+            if ($notifiable) {
+                $notifiable->notify(new \App\Notifications\OrderCancelledNotification($order));
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to send cancellation notification', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         activity()
             ->causedBy($request->user())

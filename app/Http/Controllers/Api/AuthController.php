@@ -189,23 +189,34 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:20', 'unique:users,phone'],
+            // Allow phone if no password-having user owns it already.
+            // POS-created users (no password) are merged rather than rejected.
+            'phone' => ['required', 'string', 'max:20', \Illuminate\Validation\Rule::unique('users', 'phone')->where(fn ($q) => $q->whereNotNull('password'))],
             'email' => ['nullable', 'email', 'max:255'],
         ]);
 
         try {
             DB::beginTransaction();
 
-            $user = User::create([
-                'name' => $validated['name'],
-                'phone' => $validated['phone'],
-                'email' => $validated['email'] ?? null,
-            ]);
+            // Find an existing POS-created user (no password) or create a new one.
+            $user = User::where('phone', $validated['phone'])->first();
+            if (! $user) {
+                $user = User::create([
+                    'name' => $validated['name'],
+                    'phone' => $validated['phone'],
+                    'email' => $validated['email'] ?? null,
+                ]);
+            }
 
-            Customer::create([
-                'user_id' => $user->id,
-                'is_guest' => false,
-            ]);
+            // Ensure a customer record exists and is marked as not a guest.
+            if (! $user->customer) {
+                Customer::create([
+                    'user_id' => $user->id,
+                    'is_guest' => false,
+                ]);
+            } else {
+                $user->customer->update(['is_guest' => false]);
+            }
 
             DB::commit();
 
