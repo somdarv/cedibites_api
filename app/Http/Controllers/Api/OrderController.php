@@ -311,10 +311,8 @@ class OrderController extends Controller
      */
     public function cancel(Request $request, Order $order): JsonResponse
     {
-        $terminal = ['delivered', 'completed', 'cancelled'];
-
-        if (in_array($order->status, $terminal)) {
-            return response()->error('Order cannot be cancelled in its current status', 422);
+        if ($order->status === 'cancelled') {
+            return response()->error('Order is already cancelled', 422);
         }
 
         $validated = $request->validate([
@@ -326,6 +324,24 @@ class OrderController extends Controller
             'cancelled_at' => now(),
             'cancelled_reason' => $validated['reason'] ?? null,
         ]);
+
+        // Send SMS + notification to customer
+        try {
+            $notifiable = $order->customer?->user;
+            if (! $notifiable && $order->contact_phone) {
+                // Guest / walk-in — send directly via SMS channel using a plain notifiable
+                $notifiable = new \Illuminate\Notifications\AnonymousNotifiable;
+                $notifiable->route('sms', $order->contact_phone);
+            }
+            if ($notifiable) {
+                $notifiable->notify(new \App\Notifications\OrderCancelledNotification($order));
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to send cancellation notification', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         activity()
             ->causedBy($request->user())
