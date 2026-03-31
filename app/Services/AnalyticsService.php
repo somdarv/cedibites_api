@@ -15,7 +15,9 @@ class AnalyticsService
      */
     public function getSalesAnalytics(array $filters = []): array
     {
-        $query = Order::query()->whereIn('status', ['completed', 'delivered']);
+        // Revenue = paid orders only (no_charge excluded — no money was collected).
+        $query = Order::whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+            ->where('status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
@@ -41,12 +43,22 @@ class AnalyticsService
             ->groupBy('order_type')
             ->get();
 
+        // No-charge orders (separate query — excluded from revenue but worth tracking)
+        $noChargeQuery = Order::whereHas('payments', fn ($q) => $q->where('payment_status', 'no_charge'))
+            ->where('status', '!=', 'cancelled');
+        $this->applyDateFilters($noChargeQuery, $filters);
+        $this->applyBranchFilter($noChargeQuery, $filters);
+        $noChargeCount = $noChargeQuery->count();
+        $noChargeAmount = round($noChargeQuery->sum('total_amount'), 2);
+
         return [
             'total_sales' => round($totalSales, 2),
             'total_orders' => $totalOrders,
             'average_order_value' => round($averageOrderValue, 2),
             'sales_by_day' => $salesByDay,
             'sales_by_type' => $salesByType,
+            'no_charge_count' => $noChargeCount,
+            'no_charge_amount' => $noChargeAmount,
         ];
     }
 

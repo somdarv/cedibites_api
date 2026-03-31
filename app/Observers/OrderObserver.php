@@ -28,18 +28,28 @@ class OrderObserver
             'changed_at' => now(),
         ]);
 
-        // Notify customer when order is created
-        $order->customer?->user?->notify(new OrderConfirmedNotification($order));
+        // Defer notifications until after the DB transaction commits so the
+        // payment row is available and we don't send SMS before payment is confirmed.
+        \DB::afterCommit(function () use ($order) {
+            $order->loadMissing('payments');
+            $payment = $order->payments->first();
+            $isPaid = $payment && in_array($payment->payment_status, ['completed', 'no_charge']);
 
-        // Notify all active employees at the branch
-        $this->notifyBranchEmployees($order);
+            // Only send order-confirmed SMS/notification once payment is confirmed.
+            if ($isPaid) {
+                $order->customer?->user?->notify(new OrderConfirmedNotification($order));
+            }
 
-        // Notify manager for high value orders
-        if ($order->total_amount > 200) {
-            $this->notifyBranchManager($order);
-        }
+            // Notify all active employees at the branch
+            $this->notifyBranchEmployees($order);
 
-        OrderBroadcastEvent::dispatch($order, 'created');
+            // Notify manager for high value orders
+            if ($order->total_amount > 200) {
+                $this->notifyBranchManager($order);
+            }
+
+            OrderBroadcastEvent::dispatch($order, 'created');
+        });
     }
 
     /**

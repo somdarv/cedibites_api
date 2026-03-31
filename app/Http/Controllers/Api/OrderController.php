@@ -28,6 +28,22 @@ class OrderController extends Controller
     }
 
     /**
+     * Normalise a Ghana phone number to +233XXXXXXXXX format so that
+     * "0539157613" and "+233539157613" resolve to the same user record.
+     */
+    private function normalizePhone(string $phone): string
+    {
+        $phone = preg_replace('/\s+/', '', $phone);
+        if (str_starts_with($phone, '0')) {
+            return '+233' . substr($phone, 1);
+        }
+        if (str_starts_with($phone, '233') && ! str_starts_with($phone, '+')) {
+            return '+' . $phone;
+        }
+        return $phone;
+    }
+
+    /**
      * Resolve cart identity (same logic as CartController).
      *
      * @return array{customer_id: int|null, session_id: string|null}
@@ -75,8 +91,9 @@ class OrderController extends Controller
             $validated = $request->validated();
             $guestPhone = $validated['customer_phone'] ?? null;
             if ($guestPhone) {
+                $normalizedPhone = $this->normalizePhone($guestPhone);
                 $guestUser = User::firstOrCreate(
-                    ['phone' => $guestPhone],
+                    ['phone' => $normalizedPhone],
                     ['name'  => $validated['customer_name'] ?? 'Customer']
                 );
                 if (! $guestUser->customer) {
@@ -166,7 +183,10 @@ class OrderController extends Controller
             }
 
             $paymentMethod = $validated['payment_method'];
-            $paymentStatus = $paymentMethod === 'cash' ? 'completed' : 'pending';
+            // Mark all online order payments as completed immediately — there is no
+            // real-time payment gateway for online orders, so we treat declaration
+            // of payment method as confirmation of intent to pay.
+            $paymentStatus = 'completed';
 
             Payment::create([
                 'order_id' => $order->id,
@@ -174,7 +194,7 @@ class OrderController extends Controller
                 'payment_method' => $paymentMethod,
                 'payment_status' => $paymentStatus,
                 'amount' => $totalAmount,
-                'paid_at' => $paymentStatus === 'completed' ? now() : null,
+                'paid_at' => now(),
             ]);
 
             $cart->update(['status' => 'completed']);

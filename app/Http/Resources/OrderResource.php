@@ -38,6 +38,7 @@ class OrderResource extends JsonResource
                 'longitude' => $this->branch?->longitude,
             ],
             'assigned_employee_id' => $this->assigned_employee_id,
+            'staff_name' => $this->assignedEmployee?->user?->name,
             'assigned_employee' => $this->assignedEmployee ? [
                 'id' => $this->assignedEmployee->id,
                 'name' => $this->assignedEmployee->user?->name,
