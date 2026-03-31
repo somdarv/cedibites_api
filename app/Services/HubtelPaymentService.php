@@ -394,15 +394,12 @@ class HubtelPaymentService
                 'payment_status' => $paymentStatus,
             ]);
 
-            // Progress order status to 'received' when payment completes
+            // When payment completes, broadcast so all listeners (admin table, order manager, kitchen) update live.
             if ($paymentStatus === 'completed') {
                 $order = $payment->order;
-                if ($order && $order->status === 'pending') {
-                    $order->update(['status' => 'received']);
-                    Log::info('Order status progressed to received after payment', [
-                        'order_id' => $order->id,
-                        'payment_id' => $payment->id,
-                    ]);
+                if ($order) {
+                    $order->load(['branch', 'customer.user', 'items.menuItem', 'payments']);
+                    \App\Events\OrderBroadcastEvent::dispatch($order, 'updated');
                 }
             }
         } catch (\Exception $e) {
@@ -704,12 +701,9 @@ class HubtelPaymentService
 
             if ($paymentStatus === 'completed') {
                 $order = $payment->order;
-                if ($order && $order->status === 'pending') {
-                    $order->update(['status' => 'received']);
-                    Log::info('Order status progressed to received after RMP payment', [
-                        'order_id' => $order->id,
-                        'payment_id' => $payment->id,
-                    ]);
+                if ($order) {
+                    $order->load(['branch', 'customer.user', 'items.menuItem', 'payments']);
+                    \App\Events\OrderBroadcastEvent::dispatch($order, 'updated');
                 }
             }
         } catch (\Exception $e) {
