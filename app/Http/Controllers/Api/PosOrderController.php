@@ -83,9 +83,8 @@ class PosOrderController extends Controller
                 // Generate unique order number
                 $orderNumber = $this->generateOrderNumber();
 
-                // Build delivery note (customer notes only — fulfillment type is
-                // stored in order_type, not crammed into the notes field).
-                $fulfillmentType = $request->validated('fulfillment_type');
+                // TODO: store actual fulfillment_type once the DB enum is extended (dine_in/takeaway migration pending)
+                $fulfillmentType = 'pickup'; // temporarily hardcoded until migration runs on beta
                 $deliveryNote = $request->validated('customer_notes') ?: null;
 
                 // Find or create a customer record by phone so POS customers
