@@ -22,8 +22,9 @@ class AnalyticsService
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
 
-        // Revenue = completed payments only (no_charge excluded — no money collected).
+        // Revenue = completed payments, cancelled orders excluded.
         $totalSales = (clone $query)
+            ->where('status', '!=', 'cancelled')
             ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
             ->sum('total_amount');
         $totalOrders = $query->count();
