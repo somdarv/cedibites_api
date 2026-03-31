@@ -12,6 +12,7 @@ use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Models\User;
 use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
