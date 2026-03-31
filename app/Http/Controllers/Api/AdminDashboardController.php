@@ -28,6 +28,7 @@ class AdminDashboardController extends Controller
         $ordersToday = $todayOrders->count();
         $activeOrders = $activeNow->count();
         $cancelledTodayCount = $cancelledToday->count();
+        $cancelledRevenueToday = round((clone $cancelledToday)->sum('total_amount'), 2);
 
         $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) use ($today) {
             $branchTodayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today);
@@ -74,6 +75,7 @@ class AdminDashboardController extends Controller
                 'orders_today' => $ordersToday,
                 'active_orders' => $activeOrders,
                 'cancelled_today' => $cancelledTodayCount,
+                'cancelled_revenue_today' => $cancelledRevenueToday,
             ],
             'branches' => $branches,
             'live_orders' => $liveOrdersFormatted,
