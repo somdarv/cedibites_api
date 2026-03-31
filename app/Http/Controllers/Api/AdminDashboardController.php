@@ -53,7 +53,7 @@ class AdminDashboardController extends Controller
             ];
         });
 
-        $liveOrders = Order::with(['customer.user', 'branch'])
+        $liveOrders = Order::with(['customer.user', 'branch', 'assignedEmployee.user'])
             ->paymentConfirmed()
             ->whereIn('status', $activeStatuses)
             ->latest()
@@ -73,6 +73,7 @@ class AdminDashboardController extends Controller
                 'status' => $order->status,
                 'time_ago' => $timeAgo,
                 'amount' => (float) $order->total_amount,
+                'assigned_employee' => $order->assignedEmployee?->user?->name ?? null,
             ];
         });
 
