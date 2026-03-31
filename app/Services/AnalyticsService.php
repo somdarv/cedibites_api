@@ -15,14 +15,17 @@ class AnalyticsService
      */
     public function getSalesAnalytics(array $filters = []): array
     {
-        // Revenue = paid orders only (no_charge excluded — no money was collected).
-        $query = Order::paymentConfirmed()
-            ->where('status', '!=', 'cancelled');
+        // Base: all placed orders (completed or no_charge payment).
+        // Cancelled orders are included — no refunds means revenue is still collected.
+        $query = Order::paymentConfirmed();
 
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
 
-        $totalSales = $query->sum('total_amount');
+        // Revenue = completed payments only (no_charge excluded — no money collected).
+        $totalSales = (clone $query)
+            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+            ->sum('total_amount');
         $totalOrders = $query->count();
         $averageOrderValue = $totalOrders > 0 ? $totalSales / $totalOrders : 0;
 
