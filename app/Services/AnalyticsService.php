@@ -15,12 +15,17 @@ class AnalyticsService
      */
     public function getSalesAnalytics(array $filters = []): array
     {
-        $query = Order::query()->whereIn('status', ['completed', 'delivered']);
+        // Base: all placed orders (completed or no_charge payment).
+        // Cancelled orders are included — no refunds means revenue is still collected.
+        $query = Order::paymentConfirmed();
 
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
 
-        $totalSales = $query->sum('total_amount');
+        // Revenue = completed payments only (no_charge excluded — no money collected).
+        $totalSales = (clone $query)
+            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+            ->sum('total_amount');
         $totalOrders = $query->count();
         $averageOrderValue = $totalOrders > 0 ? $totalSales / $totalOrders : 0;
 
@@ -41,12 +46,22 @@ class AnalyticsService
             ->groupBy('order_type')
             ->get();
 
+        // No-charge orders (separate query — excluded from revenue but worth tracking)
+        $noChargeQuery = Order::whereHas('payments', fn ($q) => $q->where('payment_status', 'no_charge'))
+            ->where('status', '!=', 'cancelled');
+        $this->applyDateFilters($noChargeQuery, $filters);
+        $this->applyBranchFilter($noChargeQuery, $filters);
+        $noChargeCount = $noChargeQuery->count();
+        $noChargeAmount = round($noChargeQuery->sum('total_amount'), 2);
+
         return [
             'total_sales' => round($totalSales, 2),
             'total_orders' => $totalOrders,
             'average_order_value' => round($averageOrderValue, 2),
             'sales_by_day' => $salesByDay,
             'sales_by_type' => $salesByType,
+            'no_charge_count' => $noChargeCount,
+            'no_charge_amount' => $noChargeAmount,
         ];
     }
 
@@ -179,7 +194,7 @@ class AnalyticsService
      */
     public function getOrderSourceAnalytics(array $filters = []): array
     {
-        $query = Order::query()->whereIn('status', ['completed', 'delivered']);
+        $query = Order::paymentConfirmed()->where('status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
@@ -213,7 +228,12 @@ class AnalyticsService
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
-            ->whereIn('orders.status', ['completed', 'delivered']);
+            ->whereExists(function ($q) {
+                $q->from('payments')
+                    ->whereColumn('payments.order_id', 'orders.id')
+                    ->whereIn('payments.payment_status', ['completed', 'no_charge']);
+            })
+            ->where('orders.status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters, 'orders');
         $this->applyBranchFilter($query, $filters, 'orders');
@@ -257,7 +277,12 @@ class AnalyticsService
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
-            ->whereIn('orders.status', ['completed', 'delivered']);
+            ->whereExists(function ($q) {
+                $q->from('payments')
+                    ->whereColumn('payments.order_id', 'orders.id')
+                    ->whereIn('payments.payment_status', ['completed', 'no_charge']);
+            })
+            ->where('orders.status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters, 'orders');
         $this->applyBranchFilter($query, $filters, 'orders');
@@ -293,7 +318,12 @@ class AnalyticsService
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
             ->join('menu_categories', 'menu_items.category_id', '=', 'menu_categories.id')
-            ->whereIn('orders.status', ['completed', 'delivered']);
+            ->whereExists(function ($q) {
+                $q->from('payments')
+                    ->whereColumn('payments.order_id', 'orders.id')
+                    ->whereIn('payments.payment_status', ['completed', 'no_charge']);
+            })
+            ->where('orders.status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters, 'orders');
         $this->applyBranchFilter($query, $filters, 'orders');
@@ -364,7 +394,7 @@ class AnalyticsService
      */
     public function getDeliveryPickupAnalytics(array $filters = []): array
     {
-        $query = Order::query()->whereIn('status', ['completed', 'delivered']);
+        $query = Order::paymentConfirmed()->where('status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters);
         $this->applyBranchFilter($query, $filters);
@@ -392,8 +422,8 @@ class AnalyticsService
     {
         $query = Payment::query()
             ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->where('payments.payment_status', 'completed')
-            ->whereIn('orders.status', ['completed', 'delivered']);
+            ->whereIn('payments.payment_status', ['completed', 'no_charge'])
+            ->where('orders.status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $filters, 'orders');
         $this->applyBranchFilter($query, $filters, 'orders');
@@ -445,7 +475,12 @@ class AnalyticsService
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
-            ->whereIn('orders.status', ['completed', 'delivered']);
+            ->whereExists(function ($q) {
+                $q->from('payments')
+                    ->whereColumn('payments.order_id', 'orders.id')
+                    ->whereIn('payments.payment_status', ['completed', 'no_charge']);
+            })
+            ->where('orders.status', '!=', 'cancelled');
 
         $this->applyDateFilters($query, $previousFilters, 'orders');
         $this->applyBranchFilter($query, $previousFilters, 'orders');

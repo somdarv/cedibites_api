@@ -67,7 +67,7 @@ class BranchManagerAssignedNotification extends Notification implements ShouldQu
      */
     public function toSms(object $notifiable): string
     {
-        return "CediBites: You've been assigned as manager of {$this->branch->name} branch. Check your email for more details.";
+        return "CediBites: You've been assigned as the manager of {$this->branch->name} branch. Check your email for more details.";
     }
 
     /**

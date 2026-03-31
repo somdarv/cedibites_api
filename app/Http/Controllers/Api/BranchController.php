@@ -442,6 +442,10 @@ class BranchController extends Controller
                 ->whereDate('created_at', $today)
                 ->where('status', 'cancelled')
                 ->count(),
+            'today_cancelled_revenue' => (float) $branch->orders()
+                ->whereDate('created_at', $today)
+                ->where('status', 'cancelled')
+                ->sum('total_amount'),
         ];
 
         return response()->success($stats, 'Branch statistics retrieved successfully.');

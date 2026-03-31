@@ -132,8 +132,9 @@ class OrderManagementService
                 ->count(),
 
             'today_revenue' => Order::whereIn('branch_id', $branchIds)
+                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
                 ->whereDate('created_at', $today)
-                ->whereIn('status', ['completed', 'delivered'])
+                ->where('status', '!=', 'cancelled')
                 ->sum('total_amount'),
 
             'completed_today' => Order::whereIn('branch_id', $branchIds)

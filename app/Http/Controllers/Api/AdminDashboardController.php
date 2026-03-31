@@ -20,19 +20,28 @@ class AdminDashboardController extends Controller
         $activeStatuses = ['received', 'confirmed', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'];
 
         $todayOrders = Order::paymentConfirmed()->whereDate('created_at', $today);
-        $completedToday = (clone $todayOrders)->whereIn('status', ['completed', 'delivered']);
         $cancelledToday = (clone $todayOrders)->where('status', 'cancelled');
+        $noChargeToday = (clone $todayOrders)->whereHas('payments', fn ($q) => $q->where('payment_status', 'no_charge'));
         $activeNow = Order::paymentConfirmed()->whereIn('status', $activeStatuses);
 
-        $revenueToday = round($completedToday->sum('total_amount'), 2);
+        // Revenue = sum of all paid (non-no_charge, non-cancelled) orders placed today.
+        $revenueToday = round(
+            (clone $todayOrders)
+                ->where('status', '!=', 'cancelled')
+                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+                ->sum('total_amount'),
+            2
+        );
         $ordersToday = $todayOrders->count();
         $activeOrders = $activeNow->count();
         $cancelledTodayCount = $cancelledToday->count();
+        $cancelledRevenueToday = round((clone $cancelledToday)->sum('total_amount'), 2);
 
         $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) use ($today) {
             $branchTodayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today);
             $branchTodayRevenue = (clone $branchTodayOrders)
-                ->whereIn('status', ['completed', 'delivered'])
+                ->where('status', '!=', 'cancelled')
+                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
                 ->sum('total_amount');
 
             return [
@@ -74,6 +83,9 @@ class AdminDashboardController extends Controller
                 'orders_today' => $ordersToday,
                 'active_orders' => $activeOrders,
                 'cancelled_today' => $cancelledTodayCount,
+                'cancelled_revenue_today' => $cancelledRevenueToday,
+                'no_charge_today' => $noChargeToday->count(),
+                'no_charge_today_amount' => round($noChargeToday->sum('total_amount'), 2),
             ],
             'branches' => $branches,
             'live_orders' => $liveOrdersFormatted,

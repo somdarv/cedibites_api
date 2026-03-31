@@ -12,6 +12,7 @@ use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Models\User;
 use App\Services\OrderNumberService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,22 @@ class OrderController extends Controller
     private function taxRate(): float
     {
         return (float) config('app.tax_rate', 0.20);
+    }
+
+    /**
+     * Normalise a Ghana phone number to +233XXXXXXXXX format so that
+     * "0539157613" and "+233539157613" resolve to the same user record.
+     */
+    private function normalizePhone(string $phone): string
+    {
+        $phone = preg_replace('/\s+/', '', $phone);
+        if (str_starts_with($phone, '0')) {
+            return '+233' . substr($phone, 1);
+        }
+        if (str_starts_with($phone, '233') && ! str_starts_with($phone, '+')) {
+            return '+' . $phone;
+        }
+        return $phone;
     }
 
     /**
@@ -74,8 +91,9 @@ class OrderController extends Controller
             $validated = $request->validated();
             $guestPhone = $validated['customer_phone'] ?? null;
             if ($guestPhone) {
+                $normalizedPhone = $this->normalizePhone($guestPhone);
                 $guestUser = User::firstOrCreate(
-                    ['phone' => $guestPhone],
+                    ['phone' => $normalizedPhone],
                     ['name'  => $validated['customer_name'] ?? 'Customer']
                 );
                 if (! $guestUser->customer) {
@@ -165,15 +183,18 @@ class OrderController extends Controller
             }
 
             $paymentMethod = $validated['payment_method'];
-            $paymentStatus = $paymentMethod === 'cash' ? 'completed' : 'pending';
+            // Mobile money goes through Hubtel — create as pending so initiateHubtelPayment
+            // can proceed. All other methods (cash_on_delivery, card, etc.) are completed
+            // immediately since no gateway confirmation is needed.
+            $isMomo = $paymentMethod === 'mobile_money';
 
             Payment::create([
                 'order_id' => $order->id,
                 'customer_id' => $resolvedCustomerId,
                 'payment_method' => $paymentMethod,
-                'payment_status' => $paymentStatus,
+                'payment_status' => $isMomo ? 'pending' : 'completed',
                 'amount' => $totalAmount,
-                'paid_at' => $paymentStatus === 'completed' ? now() : null,
+                'paid_at' => $isMomo ? null : now(),
             ]);
 
             $cart->update(['status' => 'completed']);
@@ -311,10 +332,8 @@ class OrderController extends Controller
      */
     public function cancel(Request $request, Order $order): JsonResponse
     {
-        $terminal = ['delivered', 'completed', 'cancelled'];
-
-        if (in_array($order->status, $terminal)) {
-            return response()->error('Order cannot be cancelled in its current status', 422);
+        if ($order->status === 'cancelled') {
+            return response()->error('Order is already cancelled', 422);
         }
 
         $validated = $request->validate([
@@ -326,6 +345,24 @@ class OrderController extends Controller
             'cancelled_at' => now(),
             'cancelled_reason' => $validated['reason'] ?? null,
         ]);
+
+        // Send SMS + notification to customer
+        try {
+            $notifiable = $order->customer?->user;
+            if (! $notifiable && $order->contact_phone) {
+                // Guest / walk-in — send directly via SMS channel using a plain notifiable
+                $notifiable = new \Illuminate\Notifications\AnonymousNotifiable;
+                $notifiable->route('sms', $order->contact_phone);
+            }
+            if ($notifiable) {
+                $notifiable->notify(new \App\Notifications\OrderCancelledNotification($order));
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to send cancellation notification', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         activity()
             ->causedBy($request->user())

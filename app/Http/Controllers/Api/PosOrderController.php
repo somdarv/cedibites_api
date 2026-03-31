@@ -21,6 +21,22 @@ class PosOrderController extends Controller
 
     private const PRICE_TOLERANCE = 0.01;
 
+    /**
+     * Normalise a Ghana phone number to +233XXXXXXXXX so that
+     * "0539157613" and "+233539157613" map to the same customer record.
+     */
+    private function normalizePhone(string $phone): string
+    {
+        $phone = preg_replace('/\s+/', '', $phone);
+        if (str_starts_with($phone, '0')) {
+            return '+233' . substr($phone, 1);
+        }
+        if (str_starts_with($phone, '233') && ! str_starts_with($phone, '+')) {
+            return '+' . $phone;
+        }
+        return $phone;
+    }
+
     public function store(StorePosOrderRequest $request): JsonResponse
     {
         // Log incoming request for debugging
@@ -67,17 +83,13 @@ class PosOrderController extends Controller
                 // Generate unique order number
                 $orderNumber = $this->generateOrderNumber();
 
-                // Build delivery note
-                $fulfillmentType = $request->validated('fulfillment_type');
-                $deliveryNote = "Fulfillment: {$fulfillmentType}";
-                $customerNotes = $request->validated('customer_notes');
-                if ($customerNotes) {
-                    $deliveryNote .= "\n{$customerNotes}";
-                }
+                // TODO: store actual fulfillment_type once the DB enum is extended (dine_in/takeaway migration pending)
+                $fulfillmentType = 'pickup'; // temporarily hardcoded until migration runs on beta
+                $deliveryNote = $request->validated('customer_notes') ?: null;
 
                 // Find or create a customer record by phone so POS customers
                 // appear in the admin customers list.
-                $contactPhone = $request->validated('contact_phone');
+                $contactPhone = $this->normalizePhone($request->validated('contact_phone') ?? '');
                 $contactName  = $request->validated('contact_name');
 
                 $posUser = \App\Models\User::firstOrCreate(
@@ -97,7 +109,7 @@ class PosOrderController extends Controller
                     'order_number' => $orderNumber,
                     'branch_id' => $branchId,
                     'assigned_employee_id' => $employee->id,
-                    'order_type' => 'pickup',
+                    'order_type' => $fulfillmentType,
                     'order_source' => 'pos',
                     'contact_name' => $contactName,
                     'contact_phone' => $contactPhone,
