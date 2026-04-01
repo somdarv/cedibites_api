@@ -277,11 +277,11 @@ class AnalyticsService
                 'menu_items.id',
                 'menu_item_options.id as option_id',
                 'menu_items.name',
-                'menu_item_options.option_label as size_label',
+                DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get();
@@ -331,11 +331,11 @@ class AnalyticsService
                 'menu_items.id',
                 'menu_item_options.id as option_id',
                 'menu_items.name',
-                'menu_item_options.option_label as size_label',
+                DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderBy('revenue')
             ->limit($limit)
             ->get()
@@ -531,15 +531,15 @@ class AnalyticsService
             ->leftJoin('menu_item_options', 'order_items.menu_item_option_id', '=', 'menu_item_options.id')
             ->select(
                 'menu_items.name',
-                'menu_item_options.option_label',
+                DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get()
             ->mapWithKeys(function ($item) {
-                $key = $item->name . '|' . ($item->option_label ?? '');
+                $key = $item->name . '|' . ($item->size_label ?? '');
                 return [$key => $item->revenue];
             })
             ->toArray();

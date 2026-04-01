@@ -31,6 +31,7 @@ class UpdateMenuItemOptionRequest extends FormRequest
                     ->ignore($option->id),
             ],
             'option_label' => ['sometimes', 'string', 'max:255'],
+            'display_name' => ['nullable', 'string', 'max:255'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'display_order' => ['nullable', 'integer', 'min:0'],
             'is_available' => ['boolean'],

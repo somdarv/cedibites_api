@@ -28,6 +28,7 @@ class StoreMenuItemOptionRequest extends FormRequest
                 Rule::unique('menu_item_options', 'option_key')->where('menu_item_id', $menuItem->id),
             ],
             'option_label' => ['required', 'string', 'max:255'],
+            'display_name' => ['nullable', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'min:0'],
             'display_order' => ['nullable', 'integer', 'min:0'],
             'is_available' => ['boolean'],

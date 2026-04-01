@@ -481,6 +481,7 @@ class PosOrderController extends Controller
                 'id' => $option->id,
                 'option_key' => $option->option_key,
                 'option_label' => $option->option_label,
+                'display_name' => $option->display_name,
                 'price' => (float) $option->price,
                 'image_url' => $option->getFirstMediaUrl('menu-item-options') ?: null,
             ];
