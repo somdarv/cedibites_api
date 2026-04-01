@@ -20,6 +20,7 @@ class MenuItemOption extends Model implements HasMedia
         'menu_item_id',
         'option_key',
         'option_label',
+        'display_name',
         'price',
         'display_order',
         'is_available',

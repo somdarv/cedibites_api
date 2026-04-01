@@ -98,6 +98,7 @@ class OrderSeeder extends Seeder
                     'id' => $option->id,
                     'option_key' => $option->option_key,
                     'option_label' => $option->option_label,
+                    'display_name' => $option->display_name,
                     'price' => (float) $option->price,
                 ] : null,
                 'quantity' => $quantity,
