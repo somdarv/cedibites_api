@@ -55,12 +55,12 @@ class AnalyticsService
         $noChargeCount = $noChargeQuery->count();
         $noChargeAmount = round($noChargeQuery->sum('total_amount'), 2);
 
-        // Average items per order
-        $revenueQuery = (clone $query)->where('status', '!=', 'cancelled')
-            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'));
-        $totalItems = $revenueQuery
-            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
-            ->sum('order_items.quantity');
+        // Average items per order — use whereIn subquery to avoid ambiguous `created_at` after join
+        $completedOrderSubquery = (clone $query)
+            ->where('status', '!=', 'cancelled')
+            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+            ->select('id');
+        $totalItems = OrderItem::whereIn('order_id', $completedOrderSubquery)->sum('quantity');
         $completedOrderCount = (clone $query)->where('status', '!=', 'cancelled')
             ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
             ->count();
