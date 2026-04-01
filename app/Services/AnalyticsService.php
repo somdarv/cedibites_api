@@ -55,6 +55,17 @@ class AnalyticsService
         $noChargeCount = $noChargeQuery->count();
         $noChargeAmount = round($noChargeQuery->sum('total_amount'), 2);
 
+        // Average items per order
+        $revenueQuery = (clone $query)->where('status', '!=', 'cancelled')
+            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'));
+        $totalItems = $revenueQuery
+            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+            ->sum('order_items.quantity');
+        $completedOrderCount = (clone $query)->where('status', '!=', 'cancelled')
+            ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
+            ->count();
+        $avgItemsPerOrder = $completedOrderCount > 0 ? round($totalItems / $completedOrderCount, 1) : 0;
+
         return [
             'total_sales' => round($totalSales, 2),
             'total_orders' => $totalOrders,
@@ -63,6 +74,7 @@ class AnalyticsService
             'sales_by_type' => $salesByType,
             'no_charge_count' => $noChargeCount,
             'no_charge_amount' => $noChargeAmount,
+            'avg_items_per_order' => $avgItemsPerOrder,
         ];
     }
 
@@ -124,7 +136,26 @@ class AnalyticsService
         }
 
         $totalCustomers = $query->count();
-        $newCustomers = (clone $query)->whereDate('created_at', '>=', now()->subDays(30))->count();
+
+        // New customer = customer whose FIRST ever order falls within the selected period.
+        // Repeat customer = customer who had at least one order before the period start.
+        $dateFrom = $filters['date_from'] ?? null;
+        $dateTo   = $filters['date_to']   ?? null;
+
+        $newCustomersQuery = Customer::whereHas('orders', function ($q) use ($dateFrom, $dateTo) {
+            if ($dateFrom) $q->whereDate('created_at', '>=', $dateFrom);
+            if ($dateTo)   $q->whereDate('created_at', '<=', $dateTo);
+        })->whereDoesntHave('orders', function ($q) use ($dateFrom) {
+            // Has no orders BEFORE the period start
+            if ($dateFrom) {
+                $q->whereDate('created_at', '<', $dateFrom);
+            } else {
+                // No date filter means we can't distinguish — treat all as new
+                $q->whereRaw('1 = 0');
+            }
+        });
+
+        $newCustomers = $newCustomersQuery->count();
 
         // Top customers by order count with spending and last order
         $topCustomers = Customer::withCount('orders')
@@ -185,6 +216,7 @@ class AnalyticsService
         return [
             'total_customers' => $totalCustomers,
             'new_customers_30_days' => $newCustomers,
+            'new_customers_in_period' => $newCustomers,
             'top_customers_by_orders' => $topCustomers,
             'top_customers_by_spending' => $topSpenders,
         ];
@@ -229,6 +261,7 @@ class AnalyticsService
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
+            ->leftJoin('menu_item_options', 'order_items.menu_item_option_id', '=', 'menu_item_options.id')
             ->whereExists(function ($q) {
                 $q->from('payments')
                     ->whereColumn('payments.order_id', 'orders.id')
@@ -242,11 +275,13 @@ class AnalyticsService
         $items = $query
             ->select(
                 'menu_items.id',
+                'menu_item_options.id as option_id',
                 'menu_items.name',
+                'menu_item_options.option_label as size_label',
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_items.name')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get();
@@ -255,7 +290,8 @@ class AnalyticsService
         $previousPeriodItems = $this->getPreviousPeriodItems($filters, $limit);
 
         return $items->map(function ($item) use ($previousPeriodItems) {
-            $previousRevenue = $previousPeriodItems[$item->name] ?? 0;
+            $key = $item->name . '|' . ($item->size_label ?? '');
+            $previousRevenue = $previousPeriodItems[$key] ?? 0;
             $trend = $previousRevenue > 0
                 ? round((($item->revenue - $previousRevenue) / $previousRevenue) * 100)
                 : ($item->revenue > 0 ? 100 : 0);
@@ -263,6 +299,7 @@ class AnalyticsService
             return [
                 'id' => $item->id,
                 'name' => $item->name,
+                'size_label' => $item->size_label ?: null,
                 'units' => $item->units,
                 'rev' => round($item->revenue, 2),
                 'trend' => $trend,
@@ -278,6 +315,7 @@ class AnalyticsService
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
+            ->leftJoin('menu_item_options', 'order_items.menu_item_option_id', '=', 'menu_item_options.id')
             ->whereExists(function ($q) {
                 $q->from('payments')
                     ->whereColumn('payments.order_id', 'orders.id')
@@ -291,11 +329,13 @@ class AnalyticsService
         return $query
             ->select(
                 'menu_items.id',
+                'menu_item_options.id as option_id',
                 'menu_items.name',
+                'menu_item_options.option_label as size_label',
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_items.name')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
             ->orderBy('revenue')
             ->limit($limit)
             ->get()
@@ -303,6 +343,7 @@ class AnalyticsService
                 return [
                     'id' => $item->id,
                     'name' => $item->name,
+                    'size_label' => $item->size_label ?: null,
                     'units' => $item->units,
                     'rev' => round($item->revenue, 2),
                 ];
@@ -487,15 +528,20 @@ class AnalyticsService
         $this->applyBranchFilter($query, $previousFilters, 'orders');
 
         return $query
+            ->leftJoin('menu_item_options', 'order_items.menu_item_option_id', '=', 'menu_item_options.id')
             ->select(
                 'menu_items.name',
+                'menu_item_options.option_label',
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_items.name')
+            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', 'menu_item_options.option_label')
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get()
-            ->pluck('revenue', 'name')
+            ->mapWithKeys(function ($item) {
+                $key = $item->name . '|' . ($item->option_label ?? '');
+                return [$key => $item->revenue];
+            })
             ->toArray();
     }
 
