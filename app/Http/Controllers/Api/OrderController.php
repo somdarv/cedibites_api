@@ -176,6 +176,7 @@ class OrderController extends Controller
                         'id' => $opt->id,
                         'option_key' => $opt->option_key,
                         'option_label' => $opt->option_label,
+                        'display_name' => $opt->display_name,
                         'price' => (float) $opt->price,
                         'image_url' => $opt->getFirstMediaUrl('menu-item-options') ?: null,
                     ] : null,

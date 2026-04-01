@@ -21,6 +21,7 @@ class MenuItemOptionResource extends JsonResource
             'menu_item_id' => $this->menu_item_id,
             'option_key' => $this->option_key,
             'option_label' => $this->option_label,
+            'display_name' => $this->display_name,
             'price' => (float) ($branchOverride?->price ?? $this->price),
             'base_price' => (float) $this->price,
             'display_order' => $this->display_order,

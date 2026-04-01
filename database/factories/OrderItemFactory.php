@@ -30,6 +30,7 @@ class OrderItemFactory extends Factory
             'menu_item_option_snapshot' => [
                 'option_key' => 'standard',
                 'option_label' => 'Standard',
+                'display_name' => null,
                 'price' => $unitPrice,
             ],
             'quantity' => $quantity,

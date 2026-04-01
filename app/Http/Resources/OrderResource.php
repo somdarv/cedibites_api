@@ -62,6 +62,7 @@ class OrderResource extends JsonResource
                     'id' => $item->menuItemOption->id,
                     'option_key' => $item->menuItemOption->option_key,
                     'option_label' => $item->menuItemOption->option_label,
+                    'display_name' => $item->menuItemOption->display_name,
                     'image_url' => $item->menuItemOption->getFirstMediaUrl('menu-item-options') ?: null,
                 ] : null,
                 'option_snapshot' => $item->menu_item_option_snapshot,
