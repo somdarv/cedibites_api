@@ -692,7 +692,7 @@ class BranchController extends Controller
                     'no_charge_count' => $noChargeCount,
                     'card_total' => round($cardTotal, 2),
                     'card_count' => $cardCount,
-                    'total_revenue' => round($momoTotal + $cashTotal + $noChargeTotal + $cardTotal, 2),
+                    'total_revenue' => round($momoTotal + $cashTotal + $cardTotal, 2),
                 ];
             })
             ->sortByDesc('total_revenue')
