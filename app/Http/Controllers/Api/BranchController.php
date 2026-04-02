@@ -9,6 +9,7 @@ use App\Http\Resources\BranchResource;
 use App\Http\Resources\EmployeeResource;
 use App\Http\Resources\OrderResource;
 use App\Models\Branch;
+use App\Models\Order;
 use App\Notifications\BranchManagerAssignedNotification;
 use App\Notifications\BranchManagerRemovedNotification;
 use Illuminate\Http\JsonResponse;
@@ -632,5 +633,71 @@ class BranchController extends Controller
 
             return response()->server_error();
         }
+    }
+
+    /**
+     * Get per-staff daily sales breakdown by payment method.
+     */
+    public function staffSales(Request $request, Branch $branch): JsonResponse
+    {
+        $date = $request->input('date', now()->toDateString());
+
+        $rows = Order::query()
+            ->where('branch_id', $branch->id)
+            ->whereDate('created_at', $date)
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('assigned_employee_id')
+            ->with(['assignedEmployee.user', 'payments'])
+            ->get()
+            ->groupBy('assigned_employee_id')
+            ->map(function ($orders, $employeeId) {
+                $employee = $orders->first()->assignedEmployee;
+                $staffName = $employee?->user?->name ?? 'Unknown';
+
+                $momoTotal = 0; $cashTotal = 0; $noChargeTotal = 0; $cardTotal = 0;
+                $momoCount = 0; $cashCount = 0; $noChargeCount = 0; $cardCount = 0;
+
+                foreach ($orders as $order) {
+                    $payment = $order->payments->first();
+                    if (! $payment) {
+                        continue;
+                    }
+
+                    $amount = (float) $order->total_amount;
+
+                    if ($payment->payment_status === 'no_charge') {
+                        $noChargeTotal += $amount;
+                        $noChargeCount++;
+                    } elseif ($payment->payment_method === 'mobile_money') {
+                        $momoTotal += $amount;
+                        $momoCount++;
+                    } elseif ($payment->payment_method === 'cash') {
+                        $cashTotal += $amount;
+                        $cashCount++;
+                    } elseif ($payment->payment_method === 'card') {
+                        $cardTotal += $amount;
+                        $cardCount++;
+                    }
+                }
+
+                return [
+                    'employee_id' => $employeeId,
+                    'staff_name' => $staffName,
+                    'total_orders' => $orders->count(),
+                    'momo_total' => round($momoTotal, 2),
+                    'momo_count' => $momoCount,
+                    'cash_total' => round($cashTotal, 2),
+                    'cash_count' => $cashCount,
+                    'no_charge_total' => round($noChargeTotal, 2),
+                    'no_charge_count' => $noChargeCount,
+                    'card_total' => round($cardTotal, 2),
+                    'card_count' => $cardCount,
+                    'total_revenue' => round($momoTotal + $cashTotal + $noChargeTotal + $cardTotal, 2),
+                ];
+            })
+            ->sortByDesc('total_revenue')
+            ->values();
+
+        return response()->success($rows);
     }
 }
