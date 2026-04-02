@@ -51,6 +51,7 @@ class Order extends Model
         'actual_delivery_time',
         'cancelled_at',
         'cancelled_reason',
+        'recorded_at',
     ];
 
     protected function casts(): array
@@ -67,6 +68,7 @@ class Order extends Model
             'estimated_delivery_time' => 'datetime',
             'actual_delivery_time' => 'datetime',
             'cancelled_at' => 'datetime',
+            'recorded_at' => 'datetime',
         ];
     }
 
