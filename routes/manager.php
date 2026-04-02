@@ -11,4 +11,5 @@ Route::prefix('manager')->middleware('permission:view_branches')->group(function
     Route::get('branches/{branch}/stats', [BranchController::class, 'stats']);
     Route::get('branches/{branch}/top-items', [BranchController::class, 'topItems']);
     Route::get('branches/{branch}/revenue-chart', [BranchController::class, 'revenueChart']);
+    Route::get('branches/{branch}/staff-sales', [BranchController::class, 'staffSales']);
 });
