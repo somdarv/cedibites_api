@@ -87,6 +87,8 @@ class PosOrderController extends Controller
                 $fulfillmentType = 'pickup'; // temporarily hardcoded until migration runs on beta
                 $deliveryNote = $request->validated('customer_notes') ?: null;
 
+                $isManualEntry = (bool) ($request->validated('is_manual_entry') ?? false);
+
                 // Find or create a customer record by phone so POS customers
                 // appear in the admin customers list.
                 $contactPhone = $this->normalizePhone($request->validated('contact_phone') ?? '');
@@ -110,7 +112,7 @@ class PosOrderController extends Controller
                     'branch_id' => $branchId,
                     'assigned_employee_id' => $employee->id,
                     'order_type' => $fulfillmentType,
-                    'order_source' => 'pos',
+                    'order_source' => $isManualEntry ? 'manual_entry' : 'pos',
                     'contact_name' => $contactName,
                     'contact_phone' => $contactPhone,
                     'delivery_note' => $deliveryNote,
@@ -119,11 +121,12 @@ class PosOrderController extends Controller
                     'tax_rate' => $this->taxRate(),
                     'tax_amount' => $totals['tax_amount'],
                     'total_amount' => $totals['total_amount'],
-                    'status' => 'received',
+                    'status' => $isManualEntry ? 'completed' : 'received',
                     'customer_id' => $posCustomerId,
                     'delivery_address' => null,
                     'delivery_latitude' => null,
                     'delivery_longitude' => null,
+                    'recorded_at' => $isManualEntry ? $request->validated('recorded_at') : null,
                 ]);
 
                 // Create order items
@@ -200,6 +203,17 @@ class PosOrderController extends Controller
                         'payment_status' => 'no_charge',
                         'customer_id' => $posCustomerId,
                     ]);
+                } elseif ($paymentMethod === 'manual_momo') {
+                    // Manual MoMo — direct transfer to branch, no gateway
+                    \App\Models\Payment::create([
+                        'order_id' => $order->id,
+                        'payment_method' => 'manual_momo',
+                        'amount' => $totals['total_amount'],
+                        'payment_status' => 'completed',
+                        'paid_at' => $isManualEntry ? $request->validated('recorded_at') : now(),
+                        'customer_id' => $posCustomerId,
+                        'transaction_id' => $request->validated('momo_reference'),
+                    ]);
                 } else {
                     // For cash, card, wallet, ghqr - mark as completed immediately
                     \App\Models\Payment::create([
@@ -207,13 +221,14 @@ class PosOrderController extends Controller
                         'payment_method' => $paymentMethod,
                         'amount' => $totals['total_amount'],
                         'payment_status' => 'completed',
-                        'paid_at' => now(),
+                        'paid_at' => $isManualEntry ? $request->validated('recorded_at') : now(),
                         'customer_id' => $posCustomerId,
                     ]);
                 }
 
                 // Log activity
-                $description = "POS order {$orderNumber} created by {$employee->user->name} at {$branch->name} for GHS {$totals['total_amount']}";
+                $entryType = $isManualEntry ? 'Manual entry' : 'POS order';
+                $description = "{$entryType} {$orderNumber} created by {$employee->user->name} at {$branch->name} for GHS {$totals['total_amount']}";
 
                 activity()
                     ->causedBy($request->user())
@@ -223,6 +238,7 @@ class PosOrderController extends Controller
                         'branch_name' => $branch->name,
                         'staff_name' => $employee->user->name,
                         'total_amount' => $totals['total_amount'],
+                        'is_manual_entry' => $isManualEntry,
                     ])
                     ->log($description);
 
