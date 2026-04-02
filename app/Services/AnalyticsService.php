@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderStatusHistory;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
 
@@ -107,15 +108,49 @@ class AnalyticsService
             ->orderBy('hour')
             ->get();
 
-        // Average preparation time
-        $avgPrepTime = (clone $query)
-            ->whereNotNull('estimated_prep_time')
-            ->avg('estimated_prep_time');
+        // Average preparation time (actual: preparing → ready from status history)
+        $orderIds = (clone $query)->pluck('id');
+
+        $avgPrepTime = 0;
+        if ($orderIds->isNotEmpty()) {
+            $driver = DB::connection()->getDriverName();
+
+            // Get the timestamp when each order entered 'preparing' and 'ready'/'ready_for_pickup'
+            $preparingTimes = OrderStatusHistory::whereIn('order_id', $orderIds)
+                ->where('status', 'preparing')
+                ->select('order_id', DB::raw('MIN(changed_at) as started_at'))
+                ->groupBy('order_id')
+                ->get()
+                ->keyBy('order_id');
+
+            $readyTimes = OrderStatusHistory::whereIn('order_id', $orderIds)
+                ->whereIn('status', ['ready', 'ready_for_pickup'])
+                ->select('order_id', DB::raw('MIN(changed_at) as finished_at'))
+                ->groupBy('order_id')
+                ->get()
+                ->keyBy('order_id');
+
+            $totalMinutes = 0;
+            $count = 0;
+            foreach ($preparingTimes as $orderId => $prep) {
+                $ready = $readyTimes->get($orderId);
+                if ($ready && $prep->started_at && $ready->finished_at) {
+                    $start = \Carbon\Carbon::parse($prep->started_at);
+                    $end = \Carbon\Carbon::parse($ready->finished_at);
+                    $diffMinutes = $start->diffInSeconds($end) / 60;
+                    if ($diffMinutes > 0 && $diffMinutes < 180) { // sanity: cap at 3 hours
+                        $totalMinutes += $diffMinutes;
+                        $count++;
+                    }
+                }
+            }
+            $avgPrepTime = $count > 0 ? $totalMinutes / $count : 0;
+        }
 
         return [
             'orders_by_status' => $ordersByStatus,
             'orders_by_hour' => $ordersByHour,
-            'average_prep_time' => round($avgPrepTime ?? 0, 2),
+            'average_prep_time' => round($avgPrepTime, 2),
             'total_orders' => $query->count(),
         ];
     }
@@ -274,14 +309,12 @@ class AnalyticsService
 
         $items = $query
             ->select(
-                'menu_items.id',
-                'menu_item_options.id as option_id',
                 'menu_items.name',
                 DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
+            ->groupBy('menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get();
@@ -297,7 +330,6 @@ class AnalyticsService
                 : ($item->revenue > 0 ? 100 : 0);
 
             return [
-                'id' => $item->id,
                 'name' => $item->name,
                 'size_label' => $item->size_label ?: null,
                 'units' => $item->units,
@@ -328,20 +360,17 @@ class AnalyticsService
 
         return $query
             ->select(
-                'menu_items.id',
-                'menu_item_options.id as option_id',
                 'menu_items.name',
                 DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.quantity) as units'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
+            ->groupBy('menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderBy('revenue')
             ->limit($limit)
             ->get()
             ->map(function ($item) {
                 return [
-                    'id' => $item->id,
                     'name' => $item->name,
                     'size_label' => $item->size_label ?: null,
                     'units' => $item->units,
@@ -462,28 +491,40 @@ class AnalyticsService
      */
     public function getPaymentMethodAnalytics(array $filters = []): array
     {
-        $query = Payment::query()
+        // Paid orders grouped by payment method
+        $paidQuery = Payment::query()
             ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->whereIn('payments.payment_status', ['completed', 'no_charge'])
+            ->where('payments.payment_status', 'completed')
             ->where('orders.status', '!=', 'cancelled');
 
-        $this->applyDateFilters($query, $filters, 'orders');
-        $this->applyBranchFilter($query, $filters, 'orders');
+        $this->applyDateFilters($paidQuery, $filters, 'orders');
+        $this->applyBranchFilter($paidQuery, $filters, 'orders');
 
-        $methods = $query
+        $methods = $paidQuery
             ->select('payments.payment_method', DB::raw('COUNT(*) as count'))
             ->groupBy('payments.payment_method')
             ->get();
 
-        $totalPayments = $methods->sum('count');
+        // No-charge orders count
+        $noChargeQuery = Payment::query()
+            ->join('orders', 'payments.order_id', '=', 'orders.id')
+            ->where('payments.payment_status', 'no_charge')
+            ->where('orders.status', '!=', 'cancelled');
 
-        return $methods->map(function ($method) use ($totalPayments) {
+        $this->applyDateFilters($noChargeQuery, $filters, 'orders');
+        $this->applyBranchFilter($noChargeQuery, $filters, 'orders');
+
+        $noChargeCount = $noChargeQuery->count();
+
+        $totalPayments = $methods->sum('count') + $noChargeCount;
+
+        $result = $methods->map(function ($method) use ($totalPayments) {
             $label = match ($method->payment_method) {
                 'mobile_money' => 'Mobile Money',
                 'cash_on_delivery' => 'Cash on Delivery',
                 'cash_at_pickup' => 'Cash at Pickup',
                 'card' => 'Card Payment',
-                default => ucfirst(str_replace('_', ' ', $method->payment_method))
+                default => ucfirst(str_replace('_', ' ', $method->payment_method ?? 'Unknown'))
             };
 
             return [
@@ -491,6 +532,16 @@ class AnalyticsService
                 'pct' => $totalPayments > 0 ? round(($method->count / $totalPayments) * 100) : 0,
             ];
         })->sortByDesc('pct')->values()->toArray();
+
+        // Append No Charge if any exist
+        if ($noChargeCount > 0) {
+            $result[] = [
+                'label' => 'No Charge',
+                'pct' => $totalPayments > 0 ? round(($noChargeCount / $totalPayments) * 100) : 0,
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -534,7 +585,7 @@ class AnalyticsService
                 DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label) as size_label'),
                 DB::raw('SUM(order_items.subtotal) as revenue')
             )
-            ->groupBy('menu_items.id', 'menu_item_options.id', 'menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
+            ->groupBy('menu_items.name', DB::raw('COALESCE(menu_item_options.display_name, menu_item_options.option_label)'))
             ->orderByDesc('revenue')
             ->limit($limit)
             ->get()

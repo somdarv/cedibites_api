@@ -431,13 +431,17 @@ class BranchController extends Controller
             'total_orders' => $branch->orders()->paymentConfirmed()->count(),
             'today_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', $today)->count(),
             'month_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', '>=', $thisMonth)->count(),
-            'today_revenue' => $branch->orders()
+            'today_revenue' => (float) $branch->orders()
+                ->paymentConfirmed()
                 ->whereDate('created_at', $today)
-                ->whereIn('status', ['completed', 'delivered'])
+                ->where('status', '!=', 'cancelled')
+                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
                 ->sum('total_amount'),
-            'month_revenue' => $branch->orders()
+            'month_revenue' => (float) $branch->orders()
+                ->paymentConfirmed()
                 ->whereDate('created_at', '>=', $thisMonth)
-                ->whereIn('status', ['completed', 'delivered'])
+                ->where('status', '!=', 'cancelled')
+                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
                 ->sum('total_amount'),
             'today_cancelled' => $branch->orders()
                 ->whereDate('created_at', $today)
@@ -462,7 +466,8 @@ class BranchController extends Controller
 
         $query = $branch->orders()
             ->with(['items.menuItem'])
-            ->whereIn('status', ['completed', 'delivered']);
+            ->paymentConfirmed()
+            ->where('status', '!=', 'cancelled');
 
         if ($date === 'today') {
             $query->whereDate('created_at', now()->startOfDay());
@@ -523,7 +528,8 @@ class BranchController extends Controller
 
         $dailyRevenue = $branch->orders()
             ->selectRaw('DATE(created_at) as date, SUM(total_amount) as revenue')
-            ->whereIn('status', ['completed', 'delivered'])
+            ->paymentConfirmed()
+            ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('date')
             ->orderBy('date')
