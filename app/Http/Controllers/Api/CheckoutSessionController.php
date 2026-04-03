@@ -47,7 +47,7 @@ class CheckoutSessionController extends Controller
             'delivery_longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'special_instructions' => ['nullable', 'string'],
             'payment_method' => ['required', 'in:mobile_money,cash'],
-            'momo_number' => ['required_if:payment_method,mobile_money', 'nullable', 'string', 'max:20'],
+            'momo_number' => ['nullable', 'string', 'max:20'],
         ]);
 
         // Resolve cart identity
