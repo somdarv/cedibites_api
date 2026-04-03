@@ -14,7 +14,8 @@ Route::get('orders', [OrderController::class, 'index']);
 Route::get('orders/{order}', [OrderController::class, 'show']);
 Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update']);
 Route::delete('orders/{order}', [OrderController::class, 'destroy']);
-Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
+// Customer cancel removed — cancellation is now staff-request + admin-approve only
+// Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 Route::post('orders/{order}/refund', [\App\Http\Controllers\Api\PaymentController::class, 'refundOrder'])->name('orders.refund');
 
 Route::get('notifications', [NotificationController::class, 'index']);

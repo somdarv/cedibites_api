@@ -37,8 +37,16 @@ class PosOrderController extends Controller
         return $phone;
     }
 
+    /**
+     * @deprecated Use POST /pos/checkout-sessions instead. This endpoint will be removed in a future release.
+     */
     public function store(StorePosOrderRequest $request): JsonResponse
     {
+        // Deprecation header — clients should migrate to checkout-sessions flow
+        header('Deprecation: true');
+        header('Sunset: 2025-09-01');
+        header('Link: </pos/checkout-sessions>; rel="successor-version"');
+
         // Log incoming request for debugging
         \Log::info('POS order request received', [
             'validated' => $request->validated(),

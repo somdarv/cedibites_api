@@ -353,7 +353,41 @@ class HubtelPaymentService
                 default => 'mobile_money', // Default fallback
             };
 
-            // Find Payment record by clientReference (order_number)
+            $paymentStatus = $this->mapHubtelStatusToPaymentStatus($status, $responseCode);
+
+            // ── New flow: Try CheckoutSession first ──
+            $checkoutSession = \App\Models\CheckoutSession::where('session_token', $clientReference)
+                ->orWhere('hubtel_transaction_id', $checkoutId)
+                ->first();
+
+            if ($checkoutSession) {
+                $checkoutSession->update([
+                    'payment_gateway_response' => $payload,
+                    'payment_method' => $paymentMethod,
+                ]);
+
+                if ($paymentStatus === 'completed' && ! $checkoutSession->order_id) {
+                    $order = $checkoutSession->convertToOrder();
+                    \App\Events\OrderBroadcastEvent::dispatch($order, 'created');
+
+                    Log::info('Hubtel callback: checkout session converted to order', [
+                        'session_id' => $checkoutSession->id,
+                        'order_id' => $order->id,
+                        'client_reference' => $clientReference,
+                    ]);
+                } elseif ($paymentStatus === 'failed') {
+                    $checkoutSession->update(['status' => 'failed']);
+
+                    Log::info('Hubtel callback: checkout session payment failed', [
+                        'session_id' => $checkoutSession->id,
+                        'client_reference' => $clientReference,
+                    ]);
+                }
+
+                return;
+            }
+
+            // ── Legacy flow: Find Payment by order_number ──
             $payment = Payment::whereHas('order', function ($query) use ($clientReference) {
                 $query->where('order_number', $clientReference);
             })->first();
@@ -362,9 +396,6 @@ class HubtelPaymentService
                 Log::error('Payment not found for clientReference', ['clientReference' => $clientReference]);
                 throw new \Exception('Payment not found');
             }
-
-            // Map Hubtel status to payment_status
-            $paymentStatus = $this->mapHubtelStatusToPaymentStatus($status, $responseCode);
 
             // Prepare update data
             $updateData = [
@@ -377,7 +408,6 @@ class HubtelPaymentService
             // Handle refund status
             if ($paymentStatus === 'refunded') {
                 $updateData['refunded_at'] = now();
-                // Extract refund reason if provided in callback
                 if (! empty($data['RefundReason'])) {
                     $updateData['refund_reason'] = $data['RefundReason'];
                 }
@@ -386,7 +416,7 @@ class HubtelPaymentService
             // Update Payment record
             $payment->update($updateData);
 
-            Log::info('Hubtel callback received', [
+            Log::info('Hubtel callback received (legacy)', [
                 'response_code' => $responseCode,
                 'status' => $status,
                 'checkout_id' => $checkoutId,
@@ -394,7 +424,7 @@ class HubtelPaymentService
                 'payment_status' => $paymentStatus,
             ]);
 
-            // When payment completes, broadcast so all listeners (admin table, order manager, kitchen) update live.
+            // When payment completes, broadcast so all listeners update live.
             if ($paymentStatus === 'completed') {
                 $order = $payment->order;
                 if ($order) {
@@ -659,7 +689,41 @@ class HubtelPaymentService
             // RMP success = "0000", failure = "2001" and others
             $paymentStatus = $responseCode === '0000' ? 'completed' : 'failed';
 
-            // Find payment by order number (clientReference) or transaction ID
+            // ── New flow: Try CheckoutSession first ──
+            $checkoutSession = \App\Models\CheckoutSession::where('session_token', $clientReference)
+                ->orWhere('hubtel_transaction_id', $transactionId)
+                ->first();
+
+            if ($checkoutSession) {
+                $checkoutSession->update([
+                    'payment_gateway_response' => array_merge(
+                        $checkoutSession->payment_gateway_response ?? [],
+                        ['rmp_callback' => $payload]
+                    ),
+                ]);
+
+                if ($paymentStatus === 'completed' && ! $checkoutSession->order_id) {
+                    $order = $checkoutSession->convertToOrder();
+                    \App\Events\OrderBroadcastEvent::dispatch($order, 'created');
+
+                    Log::info('Hubtel RMP callback: checkout session converted to order', [
+                        'session_id' => $checkoutSession->id,
+                        'order_id' => $order->id,
+                        'client_reference' => $clientReference,
+                    ]);
+                } elseif ($paymentStatus === 'failed') {
+                    $checkoutSession->update(['status' => 'failed']);
+
+                    Log::info('Hubtel RMP callback: checkout session payment failed', [
+                        'session_id' => $checkoutSession->id,
+                        'client_reference' => $clientReference,
+                    ]);
+                }
+
+                return;
+            }
+
+            // ── Legacy flow: Find payment by order_number or transaction ID ──
             $payment = Payment::whereHas('order', function ($query) use ($clientReference) {
                 $query->where('order_number', $clientReference);
             })->first();
@@ -691,7 +755,7 @@ class HubtelPaymentService
 
             $payment->update($updateData);
 
-            Log::info('Hubtel RMP callback processed', [
+            Log::info('Hubtel RMP callback processed (legacy)', [
                 'response_code' => $responseCode,
                 'client_reference' => $clientReference,
                 'transaction_id' => $transactionId,

@@ -245,15 +245,19 @@ class PaymentController extends Controller
     /**
      * Check whether the incoming request originates from an allowed Hubtel IP.
      *
-     * When HUBTEL_ALLOWED_IPS is not configured (local/dev), all IPs are allowed.
-     * In production, set HUBTEL_ALLOWED_IPS to a comma-separated list of Hubtel's
-     * callback IP addresses to enforce strict allowlisting.
+     * In production, if HUBTEL_ALLOWED_IPS is not configured, reject all callback
+     * requests (fail-closed). In non-production (local/dev), allow all IPs.
      */
     private function isAllowedCallbackIp(Request $request): bool
     {
         $allowedIps = config('services.hubtel.allowed_ips');
 
         if (empty($allowedIps)) {
+            if (app()->environment('production')) {
+                \Illuminate\Support\Facades\Log::warning('Hubtel callback rejected: HUBTEL_ALLOWED_IPS not configured in production');
+                return false;
+            }
+
             return true;
         }
 
@@ -263,13 +267,14 @@ class PaymentController extends Controller
     }
 
     /**
-     * Manually verify payment status
+     * Manually verify payment status.
+     *
+     * Also syncs CheckoutSession → Order when Hubtel reports the payment as completed.
      */
     public function verifyPayment(Payment $payment): JsonResponse
     {
         // If the payment is already in a terminal state (completed/failed/refunded),
         // return the local record directly without calling the external API.
-        // This covers RMP payments where the callback has already updated the status.
         if (in_array($payment->payment_status, ['completed', 'failed', 'refunded'])) {
             return response()->success(
                 new PaymentResource($payment->fresh()),
@@ -281,12 +286,41 @@ class PaymentController extends Controller
             $order = $payment->order;
             $result = $this->hubtelService->verifyTransaction($order->order_number);
 
+            // Sync: if Hubtel says completed, check for an unconverted CheckoutSession
+            $verified = $result['payment'] ?? $payment->fresh();
+            if ($verified->payment_status === 'completed') {
+                $this->syncCheckoutSessionIfNeeded($verified);
+            }
+
             return response()->success(
-                new PaymentResource($result['payment']),
+                new PaymentResource($verified),
                 'Payment verified successfully'
             );
         } catch (\Exception $e) {
             return response()->error($e->getMessage(), 400);
+        }
+    }
+
+    /**
+     * If a CheckoutSession is associated with this payment and hasn't been converted yet,
+     * convert it to an order now.
+     */
+    private function syncCheckoutSessionIfNeeded(Payment $payment): void
+    {
+        try {
+            $session = \App\Models\CheckoutSession::where('hubtel_transaction_id', $payment->transaction_id)
+                ->whereNull('order_id')
+                ->whereIn('status', ['payment_initiated', 'pending'])
+                ->first();
+
+            if ($session) {
+                $session->convertToOrder();
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('syncCheckoutSessionIfNeeded failed', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
