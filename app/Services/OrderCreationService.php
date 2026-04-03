@@ -19,32 +19,27 @@ class OrderCreationService
      * Called from: Hubtel callbacks, cash/card confirm endpoints, and instant flows (no_charge, manual_momo, cash-on-delivery).
      *
      * @param  \App\Models\CheckoutSession  $session
-     * @return \App\Models\Order
      *
      * @throws \RuntimeException
      */
     public function createFromCheckoutSession($session): Order
     {
-        if ($session->order_id) {
-            return Order::findOrFail($session->order_id);
-        }
-
-        if ($session->status === 'confirmed') {
-            throw new \RuntimeException('Session already converted to order.');
-        }
-
         return DB::transaction(function () use ($session) {
-            // Lock the session row to prevent double conversion
-            $session = $session->fresh();
+            // Lock the session row to prevent double conversion.
+            // We always lock (without whereNull) so we can read the
+            // authoritative order_id under the row-level lock.
             $locked = DB::table('checkout_sessions')
                 ->where('id', $session->id)
-                ->whereNull('order_id')
                 ->lockForUpdate()
                 ->first();
 
-            if (! $locked || $locked->order_id) {
-                // Already converted by another process (race condition safety)
-                return Order::findOrFail($locked->order_id ?? $session->order_id);
+            if (! $locked) {
+                throw new \RuntimeException("Checkout session {$session->id} not found.");
+            }
+
+            if ($locked->order_id) {
+                // Already converted by another process — return the existing order.
+                return Order::findOrFail($locked->order_id);
             }
 
             // Generate order number inside the transaction for atomicity
@@ -142,7 +137,7 @@ class OrderCreationService
                 $staffUser = \App\Models\Employee::find($session->staff_id)?->user;
                 $branch = \App\Models\Branch::find($session->branch_id);
                 $entryType = $isManualEntry ? 'Manual entry' : 'POS order';
-                $description = "{$entryType} {$orderNumber} created by " . ($staffUser?->name ?? 'Staff') . " at " . ($branch?->name ?? 'Branch') . " for GHS {$session->total_amount}";
+                $description = "{$entryType} {$orderNumber} created by ".($staffUser?->name ?? 'Staff').' at '.($branch?->name ?? 'Branch')." for GHS {$session->total_amount}";
 
                 activity()
                     ->causedBy($staffUser)

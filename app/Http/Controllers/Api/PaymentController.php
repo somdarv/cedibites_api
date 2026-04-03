@@ -185,6 +185,7 @@ class PaymentController extends Controller
                 'customer_name' => $customerName,
                 'customer_phone' => $customerPhone,
                 'customer_email' => $customerEmail,
+                'create_payment_record' => true, // Legacy flow: real Order exists, create Payment now
             ]);
 
             return response()->success(
@@ -255,6 +256,7 @@ class PaymentController extends Controller
         if (empty($allowedIps)) {
             if (app()->environment('production')) {
                 \Illuminate\Support\Facades\Log::warning('Hubtel callback rejected: HUBTEL_ALLOWED_IPS not configured in production');
+
                 return false;
             }
 
@@ -308,14 +310,19 @@ class PaymentController extends Controller
     private function syncCheckoutSessionIfNeeded(Payment $payment): void
     {
         try {
-            $session = \App\Models\CheckoutSession::where('hubtel_transaction_id', $payment->transaction_id)
-                ->whereNull('order_id')
-                ->whereIn('status', ['payment_initiated', 'pending'])
-                ->first();
+            // Use a transaction + lockForUpdate to prevent two concurrent
+            // verify calls from both triggering order creation.
+            \Illuminate\Support\Facades\DB::transaction(function () use ($payment) {
+                $session = \App\Models\CheckoutSession::where('hubtel_transaction_id', $payment->transaction_id)
+                    ->whereNull('order_id')
+                    ->whereIn('status', ['payment_initiated', 'pending'])
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($session) {
-                $session->convertToOrder();
-            }
+                if ($session) {
+                    $session->convertToOrder();
+                }
+            });
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('syncCheckoutSessionIfNeeded failed', [
                 'payment_id' => $payment->id,

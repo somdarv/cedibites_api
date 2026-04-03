@@ -220,8 +220,8 @@ class HubtelPaymentService
             'totalAmount' => $order->total_amount,
             'description' => $data['description'],
             'callbackUrl' => route('payments.hubtel.callback'),
-            'returnUrl' => config('app.frontend_url')."/orders/{$order->order_number}/payment/success",
-            'cancellationUrl' => config('app.frontend_url')."/orders/{$order->order_number}/payment/cancelled",
+            'returnUrl' => $data['return_url'] ?? config('app.frontend_url')."/orders/{$order->order_number}/payment/success",
+            'cancellationUrl' => $data['cancellation_url'] ?? config('app.frontend_url')."/orders/{$order->order_number}/payment/cancelled",
             'merchantAccountNumber' => $this->merchantAccountNumber,
             'clientReference' => substr($order->order_number, 0, 32), // Max 32 characters
         ];
@@ -275,22 +275,30 @@ class HubtelPaymentService
 
         $responseData = $response->json('data', []);
 
-        // Create Payment record
-        $payment = Payment::create([
-            'order_id' => $order->id,
-            'customer_id' => $order->customer_id, // Can be null for guest customers
-            'payment_method' => 'mobile_money', // Default, will be updated by callback with actual method
-            'payment_status' => 'pending',
-            'amount' => $order->total_amount,
-            'transaction_id' => $responseData['checkoutId'] ?? null,
-            'payment_gateway_response' => $responseData,
-        ]);
+        // Only create a Payment record when called with a real Order (legacy flow).
+        // Checkout session flows must NOT create Payment here — the Order (and its
+        // Payment) is created later by OrderCreationService when payment is confirmed.
+        $payment = null;
+        $createPaymentRecord = ($data['create_payment_record'] ?? false) && isset($order->id) && is_int($order->id);
+
+        if ($createPaymentRecord) {
+            $payment = Payment::create([
+                'order_id' => $order->id,
+                'customer_id' => $order->customer_id,
+                'payment_method' => 'mobile_money',
+                'payment_status' => 'pending',
+                'amount' => $order->total_amount,
+                'transaction_id' => $responseData['checkoutId'] ?? null,
+                'payment_gateway_response' => $responseData,
+            ]);
+        }
 
         Log::info('Hubtel payment initiated', [
-            'order_id' => $order->id,
+            'order_id' => $order->id ?? null,
             'order_number' => $order->order_number,
             'amount' => $order->total_amount,
             'checkout_id' => $responseData['checkoutId'] ?? null,
+            'payment_record_created' => $createPaymentRecord,
         ]);
 
         // Return normalized response
@@ -561,27 +569,19 @@ class HubtelPaymentService
         $responseCode = $response->json('ResponseCode', '');
         $message = $response->json('Message', '');
 
-        // Create Payment record with pending status
-        $payment = Payment::create([
-            'order_id' => $order->id,
-            'customer_id' => $order->customer_id,
-            'payment_method' => 'mobile_money',
-            'payment_status' => 'pending',
-            'amount' => $order->total_amount,
-            'transaction_id' => $responseData['TransactionId'] ?? null,
-            'payment_gateway_response' => array_merge($responseData, ['channel' => $channel]),
-        ]);
+        // Do NOT create a Payment record here. The checkout session tracks Hubtel
+        // metadata (transaction_id, gateway_response). The real Payment is created
+        // by OrderCreationService::createFromCheckoutSession() after Hubtel confirms.
 
         Log::info('Hubtel RMP payment pending', [
-            'order_id' => $order->id,
-            'payment_id' => $payment->id,
+            'order_id' => $order->id ?? null,
+            'order_number' => $order->order_number,
             'transaction_id' => $responseData['TransactionId'] ?? null,
             'channel' => $channel,
             'message' => $message,
         ]);
 
         return [
-            'payment' => $payment,
             'transactionId' => $responseData['TransactionId'] ?? null,
             'channel' => $channel,
             'message' => $message,
