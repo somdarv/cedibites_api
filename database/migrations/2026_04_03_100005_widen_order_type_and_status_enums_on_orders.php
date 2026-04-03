@@ -38,10 +38,13 @@ return new class extends Migration
     }
 
     /**
-     * Drop all check constraints on a column and add a new one with the given values.
+     * Drop check constraints for a specific column and add a new one with given values.
+     * Uses exact column name matching to avoid false positives.
      */
     private function replaceEnumConstraint(string $table, string $column, array $values): void
     {
+        // Find constraints whose definition references this exact column
+        // Use word-boundary matching: (column_name) to be precise
         $constraints = DB::select("
             SELECT con.conname
             FROM pg_constraint con
@@ -50,13 +53,14 @@ return new class extends Migration
             WHERE rel.relname = ?
               AND con.contype = 'c'
               AND pg_get_constraintdef(con.oid) LIKE ?
-        ", [$table, "%{$column}%"]);
+        ", [$table, "%({$column})%"]);
 
         foreach ($constraints as $con) {
-            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT \"{$con->conname}\"");
+            DB::statement("ALTER TABLE \"{$table}\" DROP CONSTRAINT \"{$con->conname}\"");
         }
 
+        // Add new constraint
         $valuesList = implode("', '", $values);
-        DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$table}_{$column}_check CHECK ({$column}::text = ANY (ARRAY['{$valuesList}']::text[]))");
+        DB::statement("ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$table}_{$column}_check\" CHECK ((\"{$column}\")::text = ANY (ARRAY['{$valuesList}']::text[]))");
     }
 };
