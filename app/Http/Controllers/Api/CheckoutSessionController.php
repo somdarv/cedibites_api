@@ -80,7 +80,7 @@ class CheckoutSessionController extends Controller
         foreach ($cart->items as $cartItem) {
             $mi = $cartItem->menuItem;
             if (! $mi) {
-                return response()->json(['message' => "Menu item no longer available."], 422);
+                return response()->json(['message' => 'Menu item no longer available.'], 422);
             }
 
             $opt = $cartItem->menuItemOption;
@@ -160,6 +160,7 @@ class CheckoutSessionController extends Controller
             $branch = Branch::find($validated['branch_id']);
 
             // Hubtel standard uses a temporary order-like object for the payload
+            $frontendUrl = config('app.frontend_url');
             $hubtelResult = $hubtel->initializeTransaction([
                 'order' => (object) [
                     'id' => $session->id,
@@ -172,6 +173,8 @@ class CheckoutSessionController extends Controller
                 'description' => "Order at {$branch->name}",
                 'customer_name' => $validated['customer_name'],
                 'customer_phone' => PhoneHelper::toInternational($validated['customer_phone']),
+                'return_url' => "{$frontendUrl}/checkout/return?session={$sessionToken}",
+                'cancellation_url' => "{$frontendUrl}/checkout/cancelled?session={$sessionToken}",
             ]);
 
             $session->update([
@@ -213,12 +216,20 @@ class CheckoutSessionController extends Controller
             $session->update(['status' => 'expired']);
         }
 
+        $isRecoverable = in_array($session->status, ['failed', 'expired', 'payment_initiated', 'pending']);
+        $isMomo = $session->payment_method === 'mobile_money';
+
         $data = [
             'session_token' => $session->session_token,
             'status' => $session->status,
             'payment_method' => $session->payment_method,
             'total_amount' => $session->total_amount,
+            'momo_number' => $session->momo_number,
             'expires_at' => $session->expires_at?->toIso8601String(),
+            'session_type' => $session->session_type,
+            'can_retry' => $isRecoverable && $isMomo,
+            'can_change_payment' => $isRecoverable && ! $session->order_id,
+            'can_change_number' => $isRecoverable && $isMomo,
         ];
 
         if ($session->status === 'confirmed' && $session->order_id) {
@@ -406,11 +417,22 @@ class CheckoutSessionController extends Controller
 
         if ($session->order_id) {
             $order = $session->order()->with(['customer.user', 'branch', 'items.menuItem', 'payments'])->first();
+
             return response()->json([
                 'session_token' => $session->session_token,
                 'status' => 'confirmed',
                 'order' => new OrderResource($order),
             ]);
+        }
+
+        if (in_array($session->status, ['confirmed', 'failed', 'abandoned', 'expired'])) {
+            return response()->json(['message' => "Cannot confirm cash — session is {$session->status}."], 422);
+        }
+
+        if ($session->expires_at && $session->expires_at->isPast()) {
+            $session->update(['status' => 'expired']);
+
+            return response()->json(['message' => 'Session has expired.'], 422);
         }
 
         $session->update(['amount_paid' => $validated['amount_paid']]);
@@ -444,11 +466,22 @@ class CheckoutSessionController extends Controller
 
         if ($session->order_id) {
             $order = $session->order()->with(['customer.user', 'branch', 'items.menuItem', 'payments'])->first();
+
             return response()->json([
                 'session_token' => $session->session_token,
                 'status' => 'confirmed',
                 'order' => new OrderResource($order),
             ]);
+        }
+
+        if (in_array($session->status, ['confirmed', 'failed', 'abandoned', 'expired'])) {
+            return response()->json(['message' => "Cannot confirm card — session is {$session->status}."], 422);
+        }
+
+        if ($session->expires_at && $session->expires_at->isPast()) {
+            $session->update(['status' => 'expired']);
+
+            return response()->json(['message' => 'Session has expired.'], 422);
         }
 
         $session->update(['amount_paid' => $validated['amount_paid']]);
@@ -564,7 +597,8 @@ class CheckoutSessionController extends Controller
     public function changePayment(Request $request, string $token): JsonResponse
     {
         $validated = $request->validate([
-            'payment_method' => ['required', 'string'],
+            'payment_method' => ['required', 'string', 'in:cash,mobile_money,card'],
+            'momo_number' => ['required_if:payment_method,mobile_money', 'nullable', 'string', 'max:20'],
         ]);
 
         $session = CheckoutSession::where('session_token', $token)->first();
@@ -594,7 +628,78 @@ class CheckoutSessionController extends Controller
             ], 201);
         }
 
-        // POS cash: frontend opens cash modal, no order yet
+        // Switching to MoMo: auto-initiate the payment flow
+        if ($newMethod === 'mobile_money' && ! empty($validated['momo_number'])) {
+            $momoNumber = PhoneHelper::normalize($validated['momo_number']);
+
+            try {
+                $hubtel = app(HubtelPaymentService::class);
+                $branch = Branch::find($session->branch_id);
+
+                if ($session->session_type === 'pos') {
+                    $result = $hubtel->initializeReceiveMoney([
+                        'order' => (object) [
+                            'id' => $session->id,
+                            'order_number' => $session->session_token,
+                            'total_amount' => $session->total_amount,
+                            'customer_id' => null,
+                            'contact_name' => $session->customer_name,
+                            'contact_phone' => PhoneHelper::toInternational($momoNumber),
+                        ],
+                        'description' => "POS Order - {$branch->name}",
+                        'customer_name' => $session->customer_name,
+                        'customer_phone' => PhoneHelper::toLocal($momoNumber),
+                    ]);
+
+                    $session->update([
+                        'status' => 'payment_initiated',
+                        'momo_number' => $momoNumber,
+                        'hubtel_transaction_id' => $result['transactionId'] ?? null,
+                        'payment_gateway_response' => $result,
+                        'expires_at' => now()->addMinutes(5),
+                    ]);
+                } else {
+                    $result = $hubtel->initializeTransaction([
+                        'order' => (object) [
+                            'id' => $session->id,
+                            'order_number' => $session->session_token,
+                            'total_amount' => $session->total_amount,
+                            'customer_id' => $session->customer_id,
+                            'contact_name' => $session->customer_name,
+                            'contact_phone' => PhoneHelper::toInternational($momoNumber),
+                        ],
+                        'description' => "Order at {$branch->name}",
+                        'customer_name' => $session->customer_name,
+                        'customer_phone' => PhoneHelper::toInternational($momoNumber),
+                    ]);
+
+                    $session->update([
+                        'status' => 'payment_initiated',
+                        'momo_number' => $momoNumber,
+                        'hubtel_transaction_id' => $result['checkoutId'] ?? null,
+                        'hubtel_checkout_url' => $result['checkoutUrl'] ?? null,
+                        'payment_gateway_response' => $result,
+                        'expires_at' => now()->addMinutes(5),
+                    ]);
+                }
+
+                return response()->json([
+                    'session_token' => $session->session_token,
+                    'status' => $session->fresh()->status,
+                    'payment_method' => $newMethod,
+                    'checkout_url' => $session->hubtel_checkout_url,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Change payment to MoMo failed', [
+                    'session_id' => $session->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return response()->json(['message' => 'Failed to initiate MoMo payment: '.$e->getMessage()], 400);
+            }
+        }
+
+        // POS cash/card: frontend opens respective modal, no order yet
         return response()->json([
             'session_token' => $session->session_token,
             'status' => 'pending',
@@ -675,6 +780,7 @@ class CheckoutSessionController extends Controller
             ], 201);
         } catch (\InvalidArgumentException $e) {
             $session->update(['status' => 'failed']);
+
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             // Hubtel unavailable — session stays pending for retry
@@ -802,6 +908,7 @@ class CheckoutSessionController extends Controller
                 $option = MenuItemOption::find($item['menu_item_option_id']);
                 if ($option && $option->menu_item_id === $menuItemId) {
                     $item['unit_price'] = (float) $option->price;
+
                     return $item;
                 }
             }
