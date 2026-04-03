@@ -79,9 +79,16 @@ class OrderController extends Controller
 
     /**
      * Store a new order from cart (frontend format; auth or guest via cart.identity).
+     *
+     * @deprecated Use POST /checkout-sessions instead. This endpoint will be removed in a future release.
      */
     public function store(StoreOrderFromCartRequest $request): JsonResponse
     {
+        // Deprecation header — clients should migrate to checkout-sessions flow
+        header('Deprecation: true');
+        header('Sunset: 2025-09-01');
+        header('Link: </checkout-sessions>; rel="successor-version"');
+
         $identity = $this->resolveCartIdentity($request);
 
         // For guest orders, find or create a customer record by phone so guest

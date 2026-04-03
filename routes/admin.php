@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AdminAnalyticsController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\AdminReportController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\CancelRequestController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\MenuAddOnController;
@@ -126,5 +127,20 @@ Route::prefix('admin')->group(function () {
             Route::get('daily', [AdminReportController::class, 'daily']);
             Route::get('monthly', [AdminReportController::class, 'monthly']);
         });
+    });
+
+    // Cancel management (admin only)
+    Route::middleware('role:admin|super_admin')->group(function () {
+        Route::post('orders/{order}/approve-cancel', [CancelRequestController::class, 'approveCancel']);
+        Route::post('orders/{order}/reject-cancel', [CancelRequestController::class, 'rejectCancel']);
+        Route::post('orders/{order}/cancel', [CancelRequestController::class, 'directCancel']);
+    });
+
+    // System settings (admin only)
+    Route::middleware('role:admin|super_admin')->prefix('settings')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'index']);
+        Route::get('{key}', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'show']);
+        Route::put('{key}', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'update']);
+        Route::post('/', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'store']);
     });
 });

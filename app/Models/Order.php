@@ -17,6 +17,29 @@ class Order extends Model
 
     protected static $recordEvents = ['updated'];
 
+    /**
+     * Valid status transitions. Each key maps to the statuses it can move to.
+     */
+    public const VALID_TRANSITIONS = [
+        'received' => ['accepted', 'preparing', 'cancel_requested', 'cancelled'],
+        'accepted' => ['preparing', 'cancel_requested', 'cancelled'],
+        'preparing' => ['ready', 'ready_for_pickup', 'cancel_requested', 'cancelled'],
+        'ready' => ['out_for_delivery', 'ready_for_pickup', 'completed', 'cancelled'],
+        'ready_for_pickup' => ['completed', 'cancelled'],
+        'out_for_delivery' => ['delivered', 'cancelled'],
+        'cancel_requested' => ['cancelled', 'received', 'accepted', 'preparing', 'ready'],
+        'delivered' => [],
+        'completed' => [],
+        'cancelled' => [],
+    ];
+
+    public function canTransitionTo(string $status): bool
+    {
+        $allowed = self::VALID_TRANSITIONS[$this->status] ?? [];
+
+        return in_array($status, $allowed, true);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -42,8 +65,7 @@ class Order extends Model
         'delivery_note',
         'subtotal',
         'delivery_fee',
-        'tax_rate',
-        'tax_amount',
+        'service_charge',
         'total_amount',
         'status',
         'estimated_prep_time',
@@ -51,6 +73,9 @@ class Order extends Model
         'actual_delivery_time',
         'cancelled_at',
         'cancelled_reason',
+        'cancel_requested_by',
+        'cancel_request_reason',
+        'cancel_requested_at',
         'recorded_at',
     ];
 
@@ -61,13 +86,13 @@ class Order extends Model
             'delivery_longitude' => 'decimal:8',
             'subtotal' => 'decimal:2',
             'delivery_fee' => 'decimal:2',
-            'tax_rate' => 'decimal:4',
-            'tax_amount' => 'decimal:2',
+            'service_charge' => 'decimal:2',
             'total_amount' => 'decimal:2',
             'estimated_prep_time' => 'integer',
             'estimated_delivery_time' => 'datetime',
             'actual_delivery_time' => 'datetime',
             'cancelled_at' => 'datetime',
+            'cancel_requested_at' => 'datetime',
             'recorded_at' => 'datetime',
         ];
     }
@@ -100,6 +125,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function cancelRequestedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancel_requested_by');
     }
 
     /**

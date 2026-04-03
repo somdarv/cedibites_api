@@ -31,21 +31,28 @@ class OrderObserver
         // Defer notifications until after the DB transaction commits so the
         // payment row is available and we don't send SMS before payment is confirmed.
         \DB::afterCommit(function () use ($order) {
-            $order->loadMissing('payments');
-            $payment = $order->payments->first();
-            $isPaid = $payment && in_array($payment->payment_status, ['completed', 'no_charge']);
+            try {
+                $order->loadMissing('payments');
+                $payment = $order->payments->first();
+                $isPaid = $payment && in_array($payment->payment_status, ['completed', 'no_charge']);
 
-            // Only send order-confirmed SMS/notification once payment is confirmed.
-            if ($isPaid) {
-                $order->customer?->user?->notify(new OrderConfirmedNotification($order));
-            }
+                // Only send order-confirmed SMS/notification once payment is confirmed.
+                if ($isPaid) {
+                    $order->customer?->user?->notify(new OrderConfirmedNotification($order));
+                }
 
-            // Notify all active employees at the branch
-            $this->notifyBranchEmployees($order);
+                // Notify all active employees at the branch
+                $this->notifyBranchEmployees($order);
 
-            // Notify manager for high value orders
-            if ($order->total_amount > 200) {
-                $this->notifyBranchManager($order);
+                // Notify manager for high value orders
+                if ($order->total_amount > 200) {
+                    $this->notifyBranchManager($order);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('OrderObserver created notification failed', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             OrderBroadcastEvent::dispatch($order, 'created');
@@ -69,16 +76,24 @@ class OrderObserver
             'changed_at' => now(),
         ]);
 
-        $customer = $order->customer?->user;
+        try {
+            $customer = $order->customer?->user;
 
-        match ($order->status) {
-            'preparing' => $customer?->notify(new OrderPreparingNotification($order)),
-            'ready', 'ready_for_pickup' => $customer?->notify(new OrderReadyNotification($order)),
-            'out_for_delivery' => $customer?->notify(new OrderOutForDeliveryNotification($order)),
-            'completed', 'delivered' => $customer?->notify(new OrderCompletedNotification($order)),
-            'cancelled' => $customer?->notify(new OrderCancelledNotification($order)),
-            default => null,
-        };
+            match ($order->status) {
+                'preparing' => $customer?->notify(new OrderPreparingNotification($order)),
+                'ready', 'ready_for_pickup' => $customer?->notify(new OrderReadyNotification($order)),
+                'out_for_delivery' => $customer?->notify(new OrderOutForDeliveryNotification($order)),
+                'completed', 'delivered' => $customer?->notify(new OrderCompletedNotification($order)),
+                'cancelled' => $customer?->notify(new OrderCancelledNotification($order)),
+                default => null,
+            };
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('OrderObserver updated notification failed', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         OrderBroadcastEvent::dispatch($order, 'updated');
     }

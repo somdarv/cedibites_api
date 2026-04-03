@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\CheckoutSessionController;
 use App\Http\Controllers\Api\EmployeeAuthController;
 use App\Http\Controllers\Api\EmployeeOrderController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ShiftController;
+use App\Services\SystemSettingService;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('employee')->group(function () {
@@ -15,6 +17,17 @@ Route::prefix('employee')->group(function () {
 Route::prefix('pos')->group(function () {
     Route::post('orders', [PosOrderController::class, 'store']);
     Route::post('verify-momo', [PosOrderController::class, 'verifyMomo']);
+
+    // Checkout sessions (POS)
+    Route::post('checkout-sessions', [CheckoutSessionController::class, 'posStore'])
+        ->middleware('throttle:30,1');
+    Route::get('checkout-sessions', [CheckoutSessionController::class, 'posIndex']);
+    Route::get('checkout-sessions/{token}', [CheckoutSessionController::class, 'show']);
+    Route::post('checkout-sessions/{token}/confirm-cash', [CheckoutSessionController::class, 'confirmCash']);
+    Route::post('checkout-sessions/{token}/confirm-card', [CheckoutSessionController::class, 'confirmCard']);
+    Route::post('checkout-sessions/{token}/retry-payment', [CheckoutSessionController::class, 'retryPayment']);
+    Route::post('checkout-sessions/{token}/change-payment', [CheckoutSessionController::class, 'changePayment']);
+    Route::delete('checkout-sessions/{token}', [CheckoutSessionController::class, 'destroy']);
 });
 
 Route::prefix('shifts')->group(function () {
@@ -33,4 +46,16 @@ Route::prefix('employee')->middleware('permission:view_orders')->group(function 
     Route::get('orders/pending', [EmployeeOrderController::class, 'pending']);
     Route::patch('orders/{order}/status', [EmployeeOrderController::class, 'updateStatus'])
         ->middleware('permission:update_orders');
+    Route::post('orders/{order}/request-cancel', [\App\Http\Controllers\Api\CancelRequestController::class, 'requestCancel'])
+        ->middleware('permission:update_orders');
+});
+
+// Read-only system settings for staff
+Route::get('settings/{key}', function (string $key) {
+    $allowed = ['manual_entry_date_enabled', 'service_charge_percent'];
+    if (!in_array($key, $allowed, true)) {
+        abort(404);
+    }
+    $service = app(SystemSettingService::class);
+    return response()->json(['data' => ['key' => $key, 'value' => $service->get($key)]]);
 });

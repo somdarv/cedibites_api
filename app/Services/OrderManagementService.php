@@ -145,12 +145,22 @@ class OrderManagementService
     }
 
     /**
-     * Update order status.
+     * Update order status with state machine validation.
      *
      * @param  \App\Models\User|null  $causer  User who performed the status change (e.g. employee)
+     *
+     * @throws \Illuminate\Http\Exceptions\HttpResponseException
      */
     public function updateOrderStatus(Order $order, string $status, ?string $notes = null, ?User $causer = null): Order
     {
+        if (! $order->canTransitionTo($status)) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'message' => "Cannot transition order from '{$order->status}' to '{$status}'.",
+                ], 422)
+            );
+        }
+
         $oldStatus = $order->status;
 
         $updateData = ['status' => $status];

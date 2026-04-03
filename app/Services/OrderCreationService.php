@@ -1,0 +1,191 @@
+<?php
+
+namespace App\Services;
+
+use App\Helpers\PhoneHelper;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Payment;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class OrderCreationService
+{
+    /**
+     * Convert a confirmed checkout session into a real Order.
+     *
+     * This is the ONE place where orders are created in the entire system.
+     * Called from: Hubtel callbacks, cash/card confirm endpoints, and instant flows (no_charge, manual_momo, cash-on-delivery).
+     *
+     * @param  \App\Models\CheckoutSession  $session
+     * @return \App\Models\Order
+     *
+     * @throws \RuntimeException
+     */
+    public function createFromCheckoutSession($session): Order
+    {
+        if ($session->order_id) {
+            return Order::findOrFail($session->order_id);
+        }
+
+        if ($session->status === 'confirmed') {
+            throw new \RuntimeException('Session already converted to order.');
+        }
+
+        return DB::transaction(function () use ($session) {
+            // Lock the session row to prevent double conversion
+            $session = $session->fresh();
+            $locked = DB::table('checkout_sessions')
+                ->where('id', $session->id)
+                ->whereNull('order_id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $locked || $locked->order_id) {
+                // Already converted by another process (race condition safety)
+                return Order::findOrFail($locked->order_id ?? $session->order_id);
+            }
+
+            // Generate order number inside the transaction for atomicity
+            $orderNumber = app(OrderNumberService::class)->generate();
+
+            // Resolve or create customer
+            $customerId = $session->customer_id;
+            if (! $customerId && $session->customer_phone) {
+                $normalizedPhone = PhoneHelper::normalize($session->customer_phone);
+                $user = User::firstOrCreate(
+                    ['phone' => $normalizedPhone],
+                    ['name' => $session->customer_name ?? 'Customer']
+                );
+                if (! $user->customer) {
+                    $user->customer()->create(['is_guest' => true]);
+                    $user->load('customer');
+                }
+                $customerId = $user->customer->id;
+            }
+
+            $isManualEntry = (bool) $session->is_manual_entry;
+
+            // Create the order
+            $order = Order::create([
+                'order_number' => $orderNumber,
+                'customer_id' => $customerId,
+                'branch_id' => $session->branch_id,
+                'assigned_employee_id' => $session->staff_id,
+                'order_type' => $session->fulfillment_type ?? 'pickup',
+                'order_source' => $this->resolveOrderSource($session),
+                'delivery_address' => $session->delivery_address,
+                'delivery_latitude' => $session->delivery_latitude,
+                'delivery_longitude' => $session->delivery_longitude,
+                'contact_name' => $session->customer_name,
+                'contact_phone' => $session->customer_phone ? PhoneHelper::normalize($session->customer_phone) : null,
+                'delivery_note' => $session->special_instructions,
+                'subtotal' => $session->subtotal,
+                'delivery_fee' => $session->delivery_fee,
+                'service_charge' => $session->service_charge,
+                'total_amount' => $session->total_amount,
+                'status' => $isManualEntry ? 'completed' : 'received',
+                'recorded_at' => $isManualEntry ? $session->recorded_at : null,
+            ]);
+
+            // Create order items from snapshot
+            $items = is_string($session->items) ? json_decode($session->items, true) : ($session->items ?? []);
+
+            foreach ($items as $item) {
+                OrderItem::create([
+                    'order_id' => $order->id,
+                    'menu_item_id' => $item['menu_item_id'],
+                    'menu_item_option_id' => $item['menu_item_option_id'] ?? null,
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['unit_price'],
+                    'subtotal' => $item['quantity'] * $item['unit_price'],
+                    'special_instructions' => $item['special_instructions'] ?? null,
+                    'menu_item_snapshot' => $item['menu_item_snapshot'] ?? null,
+                    'menu_item_option_snapshot' => $item['menu_item_option_snapshot'] ?? null,
+                ]);
+            }
+
+            // Create payment record
+            $paymentMethod = $session->payment_method;
+            $paymentStatus = $this->resolvePaymentStatus($paymentMethod);
+
+            Payment::create([
+                'order_id' => $order->id,
+                'customer_id' => $customerId,
+                'payment_method' => $paymentMethod,
+                'payment_status' => $paymentStatus,
+                'amount' => $session->total_amount,
+                'transaction_id' => $session->hubtel_transaction_id,
+                'payment_gateway_response' => $session->payment_gateway_response,
+                'paid_at' => $paymentStatus === 'completed' ? ($isManualEntry ? $session->recorded_at : now()) : null,
+            ]);
+
+            // Mark session as confirmed + link to order
+            DB::table('checkout_sessions')
+                ->where('id', $session->id)
+                ->update([
+                    'status' => 'confirmed',
+                    'order_id' => $order->id,
+                    'updated_at' => now(),
+                ]);
+
+            // Clear cart if this was an online (cart-based) order
+            if ($session->cart_id) {
+                DB::table('carts')
+                    ->where('id', $session->cart_id)
+                    ->update(['status' => 'completed', 'updated_at' => now()]);
+            }
+
+            // Log activity for POS/manual entries
+            if ($session->staff_id) {
+                $staffUser = \App\Models\Employee::find($session->staff_id)?->user;
+                $branch = \App\Models\Branch::find($session->branch_id);
+                $entryType = $isManualEntry ? 'Manual entry' : 'POS order';
+                $description = "{$entryType} {$orderNumber} created by " . ($staffUser?->name ?? 'Staff') . " at " . ($branch?->name ?? 'Branch') . " for GHS {$session->total_amount}";
+
+                activity()
+                    ->causedBy($staffUser)
+                    ->performedOn($order)
+                    ->withProperties([
+                        'order_number' => $orderNumber,
+                        'branch_name' => $branch?->name,
+                        'staff_name' => $staffUser?->name,
+                        'total_amount' => $session->total_amount,
+                        'is_manual_entry' => $isManualEntry,
+                    ])
+                    ->log($description);
+            }
+
+            $order->load(['customer.user', 'branch', 'items.menuItem', 'items.menuItemOption.media', 'payments']);
+
+            Log::info('Order created from checkout session', [
+                'order_id' => $order->id,
+                'order_number' => $orderNumber,
+                'session_id' => $session->id,
+                'session_type' => $session->session_type,
+                'payment_method' => $paymentMethod,
+            ]);
+
+            return $order;
+        });
+    }
+
+    protected function resolveOrderSource($session): string
+    {
+        if ($session->is_manual_entry) {
+            return 'manual_entry';
+        }
+
+        return $session->session_type === 'online' ? 'online' : 'pos';
+    }
+
+    protected function resolvePaymentStatus(string $paymentMethod): string
+    {
+        return match ($paymentMethod) {
+            'no_charge' => 'no_charge',
+            // mobile_money through gateway is already confirmed by this point
+            default => 'completed',
+        };
+    }
+}
