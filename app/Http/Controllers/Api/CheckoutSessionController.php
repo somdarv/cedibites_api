@@ -260,6 +260,14 @@ class CheckoutSessionController extends Controller
         return response()->json(['message' => 'Session cancelled.']);
     }
 
+    /**
+     * POST /pos/checkout-sessions/{token}/cancel — cancel a pending session (POST alternative to DELETE).
+     */
+    public function cancel(string $token): JsonResponse
+    {
+        return $this->destroy($token);
+    }
+
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // POS Endpoints — under auth:sanctum middleware
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
