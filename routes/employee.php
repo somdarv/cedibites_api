@@ -27,6 +27,7 @@ Route::prefix('pos')->group(function () {
     Route::post('checkout-sessions/{token}/confirm-card', [CheckoutSessionController::class, 'confirmCard']);
     Route::post('checkout-sessions/{token}/retry-payment', [CheckoutSessionController::class, 'retryPayment']);
     Route::post('checkout-sessions/{token}/change-payment', [CheckoutSessionController::class, 'changePayment']);
+    Route::post('checkout-sessions/{token}/cancel', [CheckoutSessionController::class, 'cancel']);
     Route::delete('checkout-sessions/{token}', [CheckoutSessionController::class, 'destroy']);
 });
 
@@ -53,9 +54,10 @@ Route::prefix('employee')->middleware('permission:view_orders')->group(function 
 // Read-only system settings for staff
 Route::get('settings/{key}', function (string $key) {
     $allowed = ['manual_entry_date_enabled', 'service_charge_percent'];
-    if (!in_array($key, $allowed, true)) {
+    if (! in_array($key, $allowed, true)) {
         abort(404);
     }
     $service = app(SystemSettingService::class);
+
     return response()->json(['data' => ['key' => $key, 'value' => $service->get($key)]]);
 });
