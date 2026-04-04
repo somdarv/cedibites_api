@@ -27,16 +27,7 @@ class MenuCategoryController extends Controller
             $query->where('branch_id', $request->integer('branch_id'));
         }
 
-        // For the public endpoint, return unique categories by name
-        // This prevents duplicate category names when multiple branches have the same categories
-        $categories = $query->orderBy('display_order')
-            ->get()
-            ->groupBy('name')
-            ->map(function ($group) {
-                // Return the first category of each name group
-                return $group->first();
-            })
-            ->values();
+        $categories = $query->orderBy('display_order')->get();
 
         return response()->success(
             MenuCategoryResource::collection($categories),

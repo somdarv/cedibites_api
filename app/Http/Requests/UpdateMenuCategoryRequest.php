@@ -20,12 +20,18 @@ class UpdateMenuCategoryRequest extends FormRequest
      */
     public function rules(): array
     {
+        $category = $this->route('menu_category');
+        $branchId = $this->input('branch_id') ?? $category?->branch_id;
+
         return [
+            'branch_id' => ['sometimes', 'exists:branches,id'],
             'name' => [
                 'sometimes',
                 'string',
                 'max:255',
-                Rule::unique('menu_categories', 'name')->ignore($this->route('menu_category')),
+                Rule::unique('menu_categories', 'name')
+                    ->where('branch_id', $branchId)
+                    ->ignore($category),
             ],
             'description' => ['sometimes', 'nullable', 'string'],
             'display_order' => ['sometimes', 'integer', 'min:0'],
@@ -39,7 +45,7 @@ class UpdateMenuCategoryRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.unique' => 'A category with this name already exists.',
+            'name.unique' => 'A category with this name already exists in this branch.',
         ];
     }
 }
