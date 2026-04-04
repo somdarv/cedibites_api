@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CreateMenuCategoryRequest extends FormRequest
 {
@@ -20,7 +21,14 @@ class CreateMenuCategoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255', 'unique:menu_categories,name'],
+            'branch_id' => ['required', 'exists:branches,id'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('menu_categories', 'name')
+                    ->where('branch_id', $this->input('branch_id')),
+            ],
             'description' => ['nullable', 'string'],
             'display_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
@@ -33,8 +41,10 @@ class CreateMenuCategoryRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'branch_id.required' => 'Branch is required.',
+            'branch_id.exists' => 'Selected branch does not exist.',
             'name.required' => 'Category name is required.',
-            'name.unique' => 'A category with this name already exists.',
+            'name.unique' => 'A category with this name already exists in this branch.',
         ];
     }
 }
