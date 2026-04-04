@@ -77,6 +77,7 @@ class Order extends Model
         'cancel_request_reason',
         'cancel_requested_at',
         'recorded_at',
+        'momo_number',
     ];
 
     protected function casts(): array

@@ -42,6 +42,11 @@ class OrderCreationService
                 return Order::findOrFail($locked->order_id);
             }
 
+            // Guard: do not create orders from expired or abandoned sessions
+            if (in_array($locked->status, ['expired', 'abandoned'])) {
+                throw new \RuntimeException("Cannot create order from {$locked->status} session {$session->id}.");
+            }
+
             // Generate order number inside the transaction for atomicity
             $orderNumber = app(OrderNumberService::class)->generate();
 
@@ -82,6 +87,7 @@ class OrderCreationService
                 'total_amount' => $session->total_amount,
                 'status' => $isManualEntry ? 'completed' : 'received',
                 'recorded_at' => $isManualEntry ? $session->recorded_at : null,
+                'momo_number' => $session->momo_number,
             ]);
 
             // Create order items from snapshot

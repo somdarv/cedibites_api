@@ -514,6 +514,25 @@ class CheckoutSessionController extends Controller
             return response()->json(['message' => 'Session already confirmed.'], 422);
         }
 
+        if (in_array($session->status, ['expired', 'abandoned'])) {
+            return response()->json(['message' => 'This payment session has expired. Please start a new order.'], 410);
+        }
+
+        // Enforce 5-minute cooldown between MoMo prompts
+        if ($session->last_momo_sent_at) {
+            $secondsSinceLast = (int) $session->last_momo_sent_at->diffInSeconds(now());
+            $cooldown = 300; // 5 minutes — matches MoMo USSD prompt duration
+
+            if ($secondsSinceLast < $cooldown) {
+                $remaining = $cooldown - $secondsSinceLast;
+
+                return response()->json([
+                    'message' => "Please wait {$remaining} seconds before re-sending the MoMo prompt.",
+                    'cooldown_remaining' => $remaining,
+                ], 429);
+            }
+        }
+
         $momoNumber = isset($validated['momo_number'])
             ? PhoneHelper::normalize($validated['momo_number'])
             : $session->momo_number;
@@ -548,6 +567,7 @@ class CheckoutSessionController extends Controller
                     'hubtel_transaction_id' => $result['transactionId'] ?? null,
                     'payment_gateway_response' => $result,
                     'expires_at' => now()->addMinutes(5),
+                    'last_momo_sent_at' => now(),
                 ]);
             } else {
                 // Online → Standard
@@ -573,6 +593,7 @@ class CheckoutSessionController extends Controller
                     'hubtel_checkout_url' => $result['checkoutUrl'] ?? null,
                     'payment_gateway_response' => $result,
                     'expires_at' => now()->addMinutes(5),
+                    'last_momo_sent_at' => now(),
                 ]);
             }
 
@@ -611,6 +632,10 @@ class CheckoutSessionController extends Controller
             return response()->json(['message' => 'Session already confirmed.'], 422);
         }
 
+        if (in_array($session->status, ['expired', 'abandoned'])) {
+            return response()->json(['message' => 'This payment session has expired. Please start a new order.'], 410);
+        }
+
         $newMethod = $validated['payment_method'];
         $session->update([
             'payment_method' => $newMethod,
@@ -631,6 +656,21 @@ class CheckoutSessionController extends Controller
         // Switching to MoMo: auto-initiate the payment flow
         if ($newMethod === 'mobile_money' && ! empty($validated['momo_number'])) {
             $momoNumber = PhoneHelper::normalize($validated['momo_number']);
+
+            // Enforce 5-minute cooldown between MoMo prompts
+            if ($session->last_momo_sent_at) {
+                $secondsSinceLast = (int) $session->last_momo_sent_at->diffInSeconds(now());
+                $cooldown = 300;
+
+                if ($secondsSinceLast < $cooldown) {
+                    $remaining = $cooldown - $secondsSinceLast;
+
+                    return response()->json([
+                        'message' => "Please wait {$remaining} seconds before re-sending the MoMo prompt.",
+                        'cooldown_remaining' => $remaining,
+                    ], 429);
+                }
+            }
 
             try {
                 $hubtel = app(HubtelPaymentService::class);
@@ -657,6 +697,7 @@ class CheckoutSessionController extends Controller
                         'hubtel_transaction_id' => $result['transactionId'] ?? null,
                         'payment_gateway_response' => $result,
                         'expires_at' => now()->addMinutes(5),
+                        'last_momo_sent_at' => now(),
                     ]);
                 } else {
                     $result = $hubtel->initializeTransaction([
@@ -680,6 +721,7 @@ class CheckoutSessionController extends Controller
                         'hubtel_checkout_url' => $result['checkoutUrl'] ?? null,
                         'payment_gateway_response' => $result,
                         'expires_at' => now()->addMinutes(5),
+                        'last_momo_sent_at' => now(),
                     ]);
                 }
 
@@ -771,6 +813,7 @@ class CheckoutSessionController extends Controller
                 'status' => 'payment_initiated',
                 'hubtel_transaction_id' => $result['transactionId'] ?? null,
                 'payment_gateway_response' => $result,
+                'last_momo_sent_at' => now(),
             ]);
 
             return response()->json([
