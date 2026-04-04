@@ -19,7 +19,7 @@ class SystemSettingController extends Controller
     {
         $settings = DB::table('system_settings')->get()->map(fn ($row) => [
             'key' => $row->key,
-            'value' => $this->settings->get($row->key),
+            'value' => $row->value,
             'type' => $row->type,
             'description' => $row->description,
         ]);
