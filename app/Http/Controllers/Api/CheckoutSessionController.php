@@ -856,6 +856,7 @@ class CheckoutSessionController extends Controller
             'status' => 'pending',
             'payment_method' => $session->payment_method,
             'total_amount' => $session->total_amount,
+            'is_manual_entry' => (bool) $session->is_manual_entry,
         ], 201);
     }
 

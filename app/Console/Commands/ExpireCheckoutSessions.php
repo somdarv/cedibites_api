@@ -9,11 +9,13 @@ use Illuminate\Support\Facades\Log;
 class ExpireCheckoutSessions extends Command
 {
     protected $signature = 'checkout-sessions:expire';
+
     protected $description = 'Mark expired checkout sessions and broadcast updates';
 
     public function handle(): int
     {
         $expired = CheckoutSession::whereIn('status', ['pending', 'payment_initiated'])
+            ->where('is_manual_entry', false)
             ->where('expires_at', '<', now())
             ->get();
 

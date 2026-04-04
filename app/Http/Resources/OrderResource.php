@@ -100,6 +100,7 @@ class OrderResource extends JsonResource
                 'changed_at' => $history->changed_at?->toIso8601String(),
                 'created_at' => $history->created_at?->toIso8601String(),
             ]),
+            'recorded_at' => $this->recorded_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

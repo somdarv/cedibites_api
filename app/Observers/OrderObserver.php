@@ -74,6 +74,11 @@ class OrderObserver
             return;
         }
 
+        // Past orders (manual entries) should not trigger notifications or broadcasts.
+        if ($order->order_source === 'manual_entry') {
+            return;
+        }
+
         // Record status change in history
         $order->statusHistory()->create([
             'status' => $order->status,
