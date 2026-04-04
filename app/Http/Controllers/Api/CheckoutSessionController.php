@@ -110,9 +110,17 @@ class CheckoutSessionController extends Controller
             ];
         }
 
-        // Calculate totals — 1% service charge on customer orders
-        $serviceChargePercent = $this->settingService->getInteger('service_charge_percent', 1);
-        $serviceCharge = round($subtotal * ($serviceChargePercent / 100), 2);
+        // Calculate totals — service charge on customer orders (percentage with cap)
+        $serviceChargeEnabled = $this->settingService->getBoolean('service_charge_enabled', true);
+        $serviceCharge = 0;
+        if ($serviceChargeEnabled) {
+            $serviceChargePercent = $this->settingService->getInteger('service_charge_percent', 1);
+            $serviceChargeCap = $this->settingService->getInteger('service_charge_cap', 5);
+            $serviceCharge = round($subtotal * ($serviceChargePercent / 100), 2);
+            if ($serviceChargeCap > 0 && $serviceCharge > $serviceChargeCap) {
+                $serviceCharge = (float) $serviceChargeCap;
+            }
+        }
         $deliveryFee = 0; // Delivery fees temporarily disabled
         $totalAmount = $subtotal + $serviceCharge + $deliveryFee;
 
@@ -417,10 +425,18 @@ class CheckoutSessionController extends Controller
             'amount_paid' => ['required', 'numeric', 'min:0'],
         ]);
 
-        $session = CheckoutSession::where('session_token', $token)->first();
+        $session = CheckoutSession::where('session_token', $token)
+            ->where('payment_method', 'cash')
+            ->first();
 
         if (! $session) {
             return response()->json(['message' => 'Session not found.'], 404);
+        }
+
+        // Verify the requesting employee belongs to this session's branch
+        $employee = $request->user()->employee;
+        if ($employee) {
+            $this->verifyStaffAuthorization($employee, $session->branch_id);
         }
 
         if ($session->order_id) {
@@ -470,6 +486,12 @@ class CheckoutSessionController extends Controller
 
         if (! $session) {
             return response()->json(['message' => 'Session not found.'], 404);
+        }
+
+        // Verify the requesting employee belongs to this session's branch
+        $employee = $request->user()->employee;
+        if ($employee) {
+            $this->verifyStaffAuthorization($employee, $session->branch_id);
         }
 
         if ($session->order_id) {
