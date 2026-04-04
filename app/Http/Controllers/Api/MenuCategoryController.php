@@ -40,7 +40,12 @@ class MenuCategoryController extends Controller
      */
     public function store(CreateMenuCategoryRequest $request): JsonResponse
     {
-        $category = MenuCategory::create($request->validated());
+        $data = $request->validated();
+        if (empty($data['slug'])) {
+            $data['slug'] = \Illuminate\Support\Str::slug($data['name']);
+        }
+
+        $category = MenuCategory::create($data);
 
         return response()->success(
             new MenuCategoryResource($category),

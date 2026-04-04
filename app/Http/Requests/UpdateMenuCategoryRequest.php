@@ -35,6 +35,7 @@ class UpdateMenuCategoryRequest extends FormRequest
             ],
             'description' => ['sometimes', 'nullable', 'string'],
             'display_order' => ['sometimes', 'integer', 'min:0'],
+            'slug' => ['sometimes', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

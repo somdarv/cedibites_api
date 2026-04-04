@@ -103,6 +103,57 @@ Items still needing attention.
 
 ---
 
+## [2026-04-04] Session: syncOptions Race Condition Fix — Backend Confirmation (No Changes)
+
+### Intent
+
+Investigate the root cause of "images not showing on customer side" and the "Item saved but image/option sync failed" error reported on the frontend menu management pages. Determine whether the backend's `MenuItemOptionController::destroy()` 422 guard needed modification.
+
+### Changes Made
+
+| File | Change | Reason |
+| ---- | ------ | ------ |
+| _No backend files changed_ | — | The fix was applied frontend-side only |
+
+### Investigation Findings
+
+The backend's `MenuItemOptionController::destroy()` method returns HTTP 422 when attempting to delete the last remaining option on a menu item (`count() <= 1` guard). This is **correct behavior** — menu items must always have at least one option (the 'standard' option for simple-priced items, or named options for multi-option items).
+
+The bug was in the frontend's `syncOptions()` function ordering: it deleted non-desired options BEFORE creating new ones. When a user replaced ALL option keys with entirely new ones (zero overlap between old and new), the delete loop tried to remove every existing option, hitting the last-option guard. This caused the entire `syncOptions()` promise chain to fail, which also prevented image uploads (the image upload step runs at the end of the chain).
+
+### Decisions
+
+- **Decision**: Backend's `count() <= 1` guard in `destroy()` is correct and should NOT be changed
+  - **Rationale**: Menu items must always have at least one option; the guard prevents data integrity issues
+- **Decision**: No bulk-sync endpoint needed at this time
+  - **Alternatives**: Could create a `PUT /menu-items/{id}/options` bulk-sync endpoint
+  - **Rationale**: Frontend reorder (upsert-then-delete) is the minimal fix; a bulk endpoint adds complexity without clear benefit right now
+
+### Cross-Repo Impact
+
+| File (Frontend repo)              | Change                                                                          | Impact                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `app/admin/menu/page.tsx`         | Reordered `syncOptions()`: upsert desired options first, then delete stale ones | Fixes the 422 error when replacing all option keys; fixes downstream image upload failure       |
+| `app/staff/manager/menu/page.tsx` | Same reorder applied to BM menu page                                            | Same fix applied for consistency                                                               |
+
+### Current State
+
+- `MenuItemOptionController::destroy()` — unchanged, 422 guard for last-option deletion remains
+- `MenuItemOptionController::store()` and `update()` — unchanged, work correctly for upsert operations
+- The frontend now calls these endpoints in the correct order (create/update first, delete second)
+- Branch: `payment-order-bug-fixes`
+
+### Note on Category Slug Fix
+
+The category slug fix from the Menu Management Audit session (adding `slug` to `CreateMenuCategoryRequest` and `UpdateMenuCategoryRequest` validation rules, and auto-generating slug in `MenuCategoryController::store()`) is recorded in the "Menu Management Audit — Full-Stack Fixes" entry above.
+
+### Pending / Follow-up
+
+- Consider a bulk-sync endpoint (`PUT /menu-items/{id}/options`) if frontend option management grows more complex
+- `MenuItemOptionController::destroy()` could benefit from a more descriptive error message (e.g., "Cannot delete the last option on a menu item")
+
+---
+
 ## [2026-04-04] Session: Menu Management Audit — Full-Stack Fixes
 
 ### Intent
