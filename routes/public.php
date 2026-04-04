@@ -22,3 +22,17 @@ Route::get('menu-items', [MenuItemController::class, 'index']);
 Route::get('menu-items/{menuItem}', [MenuItemController::class, 'show']);
 Route::get('orders/by-number/{orderNumber}', [OrderController::class, 'showByNumber']);
 Route::post('promos/resolve', [PromoController::class, 'resolve']);
+
+// Public checkout config (service charge settings for frontend display)
+Route::get('checkout-config', function () {
+    $service = app(\App\Services\SystemSettingService::class);
+    $enabled = $service->getBoolean('service_charge_enabled', true);
+
+    return response()->json([
+        'data' => [
+            'service_charge_enabled' => $enabled,
+            'service_charge_percent' => $enabled ? $service->getInteger('service_charge_percent', 1) : 0,
+            'service_charge_cap' => $enabled ? $service->getInteger('service_charge_cap', 5) : 0,
+        ],
+    ]);
+});
