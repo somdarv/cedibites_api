@@ -374,6 +374,17 @@ class HubtelPaymentService
                     'payment_method' => $paymentMethod,
                 ]);
 
+                // Guard: do not convert expired/abandoned sessions
+                if (in_array($checkoutSession->status, ['expired', 'abandoned'])) {
+                    Log::warning('Hubtel callback: ignoring completed payment for expired/abandoned session', [
+                        'session_id' => $checkoutSession->id,
+                        'session_status' => $checkoutSession->status,
+                        'client_reference' => $clientReference,
+                    ]);
+
+                    return;
+                }
+
                 if ($paymentStatus === 'completed' && ! $checkoutSession->order_id) {
                     $order = $checkoutSession->convertToOrder();
                     \App\Events\OrderBroadcastEvent::dispatch($order, 'created');
@@ -384,11 +395,20 @@ class HubtelPaymentService
                         'client_reference' => $clientReference,
                     ]);
                 } elseif ($paymentStatus === 'failed') {
-                    $checkoutSession->update(['status' => 'failed']);
+                    $failureMessage = match ($responseCode) {
+                        '5007' => 'Payment was declined by the provider.',
+                        '4010' => 'Transaction was cancelled by the customer.',
+                        default => 'Payment failed. Please try again or use a different payment method.',
+                    };
+                    $checkoutSession->update([
+                        'status' => 'failed',
+                        'failure_reason' => $failureMessage,
+                    ]);
 
                     Log::info('Hubtel callback: checkout session payment failed', [
                         'session_id' => $checkoutSession->id,
                         'client_reference' => $clientReference,
+                        'response_code' => $responseCode,
                     ]);
                 }
 
@@ -702,6 +722,17 @@ class HubtelPaymentService
                     ),
                 ]);
 
+                // Guard: do not convert expired/abandoned sessions
+                if (in_array($checkoutSession->status, ['expired', 'abandoned'])) {
+                    Log::warning('Hubtel RMP callback: ignoring completed payment for expired/abandoned session', [
+                        'session_id' => $checkoutSession->id,
+                        'session_status' => $checkoutSession->status,
+                        'client_reference' => $clientReference,
+                    ]);
+
+                    return;
+                }
+
                 if ($paymentStatus === 'completed' && ! $checkoutSession->order_id) {
                     $order = $checkoutSession->convertToOrder();
                     \App\Events\OrderBroadcastEvent::dispatch($order, 'created');
@@ -712,11 +743,15 @@ class HubtelPaymentService
                         'client_reference' => $clientReference,
                     ]);
                 } elseif ($paymentStatus === 'failed') {
-                    $checkoutSession->update(['status' => 'failed']);
+                    $checkoutSession->update([
+                        'status' => 'failed',
+                        'failure_reason' => $this->mapRmpResponseCodeToMessage($responseCode),
+                    ]);
 
                     Log::info('Hubtel RMP callback: checkout session payment failed', [
                         'session_id' => $checkoutSession->id,
                         'client_reference' => $clientReference,
+                        'response_code' => $responseCode,
                     ]);
                 }
 

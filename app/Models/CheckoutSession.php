@@ -44,6 +44,8 @@ class CheckoutSession extends Model
         'amount_paid',
         'expires_at',
         'order_id',
+        'last_momo_sent_at',
+        'failure_reason',
     ];
 
     protected function casts(): array
@@ -60,6 +62,7 @@ class CheckoutSession extends Model
             'is_manual_entry' => 'boolean',
             'recorded_at' => 'datetime',
             'expires_at' => 'datetime',
+            'last_momo_sent_at' => 'datetime',
         ];
     }
 
@@ -95,7 +98,7 @@ class CheckoutSession extends Model
     public function scopeExpired(Builder $query): void
     {
         $query->where('status', 'pending')
-              ->where('expires_at', '<', now());
+            ->where('expires_at', '<', now());
     }
 
     public function scopeForStaff(Builder $query, int $staffId): void
@@ -111,7 +114,7 @@ class CheckoutSession extends Model
     public function scopeAwaitingPayment(Builder $query): void
     {
         $query->whereIn('status', ['pending', 'payment_initiated'])
-              ->where('expires_at', '>', now());
+            ->where('expires_at', '>', now());
     }
 
     // ── Helpers ──────────────────────────────
