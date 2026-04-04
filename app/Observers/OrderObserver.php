@@ -28,6 +28,11 @@ class OrderObserver
             'changed_at' => now(),
         ]);
 
+        // Past orders (manual entries) should not trigger notifications or broadcasts.
+        if ($order->order_source === 'manual_entry') {
+            return;
+        }
+
         // Defer notifications until after the DB transaction commits so the
         // payment row is available and we don't send SMS before payment is confirmed.
         \DB::afterCommit(function () use ($order) {

@@ -223,7 +223,7 @@ class HubtelPaymentService
             'returnUrl' => $data['return_url'] ?? config('app.frontend_url')."/orders/{$order->order_number}/payment/success",
             'cancellationUrl' => $data['cancellation_url'] ?? config('app.frontend_url')."/orders/{$order->order_number}/payment/cancelled",
             'merchantAccountNumber' => $this->merchantAccountNumber,
-            'clientReference' => substr($order->order_number, 0, 32), // Max 32 characters
+            'clientReference' => $order->order_number,
         ];
 
         // Include customer details - use provided data or fall back to order contact info for guest customers
@@ -364,8 +364,13 @@ class HubtelPaymentService
             $paymentStatus = $this->mapHubtelStatusToPaymentStatus($status, $responseCode);
 
             // ── New flow: Try CheckoutSession first ──
+            // Look up by exact session_token, checkoutId, or by prefix match
+            // (handles legacy truncated clientReference where UUID was cut to 32 chars)
             $checkoutSession = \App\Models\CheckoutSession::where('session_token', $clientReference)
                 ->orWhere('hubtel_transaction_id', $checkoutId)
+                ->when(strlen($clientReference) < 36, function ($q) use ($clientReference) {
+                    $q->orWhere('session_token', 'like', $clientReference.'%');
+                })
                 ->first();
 
             if ($checkoutSession) {
@@ -555,7 +560,7 @@ class HubtelPaymentService
             'Amount' => round((float) $order->total_amount, 2),
             'PrimaryCallbackUrl' => route('payments.hubtel.rmp.callback'),
             'Description' => $data['description'],
-            'ClientReference' => substr($order->order_number, 0, 36),
+            'ClientReference' => $order->order_number,
         ];
 
         Log::info('Hubtel RMP receive money initiated', [
@@ -710,8 +715,13 @@ class HubtelPaymentService
             $paymentStatus = $responseCode === '0000' ? 'completed' : 'failed';
 
             // ── New flow: Try CheckoutSession first ──
+            // Look up by exact session_token, transactionId, or by prefix match
+            // (handles legacy truncated clientReference where UUID was cut to 32 chars)
             $checkoutSession = \App\Models\CheckoutSession::where('session_token', $clientReference)
                 ->orWhere('hubtel_transaction_id', $transactionId)
+                ->when(strlen($clientReference) < 36, function ($q) use ($clientReference) {
+                    $q->orWhere('session_token', 'like', $clientReference.'%');
+                })
                 ->first();
 
             if ($checkoutSession) {
