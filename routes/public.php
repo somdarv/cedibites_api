@@ -33,6 +33,9 @@ Route::get('checkout-config', function () {
             'service_charge_enabled' => $enabled,
             'service_charge_percent' => $enabled ? $service->getInteger('service_charge_percent', 1) : 0,
             'service_charge_cap' => $enabled ? $service->getInteger('service_charge_cap', 5) : 0,
+            'delivery_fee_enabled' => $service->getBoolean('delivery_fee_enabled', false),
+            'global_operating_hours_open' => $service->get('global_operating_hours_open', '08:00'),
+            'global_operating_hours_close' => $service->get('global_operating_hours_close', '22:00'),
         ],
     ]);
 });

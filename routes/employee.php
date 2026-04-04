@@ -53,7 +53,7 @@ Route::prefix('employee')->middleware('permission:view_orders')->group(function 
 
 // Read-only system settings for staff
 Route::get('settings/{key}', function (string $key) {
-    $allowed = ['manual_entry_date_enabled', 'service_charge_percent', 'service_charge_enabled', 'service_charge_cap'];
+    $allowed = ['manual_entry_date_enabled', 'service_charge_percent', 'service_charge_enabled', 'service_charge_cap', 'delivery_fee_enabled', 'global_operating_hours_open', 'global_operating_hours_close'];
     if (! in_array($key, $allowed, true)) {
         abort(404);
     }
