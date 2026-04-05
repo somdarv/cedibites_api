@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\EmployeeAuthController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MenuCategoryController;
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\OrderController;
@@ -20,6 +21,7 @@ Route::get('branches/{branch}/menu-items/{itemId}/available', [BranchController:
 Route::get('menu-categories', [MenuCategoryController::class, 'index']);
 Route::get('menu-items', [MenuItemController::class, 'index']);
 Route::get('menu-items/{menuItem}', [MenuItemController::class, 'show']);
+Route::get('media/{media}', MediaController::class)->name('media.show');
 Route::get('orders/by-number/{orderNumber}', [OrderController::class, 'showByNumber']);
 Route::post('promos/resolve', [PromoController::class, 'resolve']);
 
