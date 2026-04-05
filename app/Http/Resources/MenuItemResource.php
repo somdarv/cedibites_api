@@ -30,7 +30,9 @@ class MenuItemResource extends JsonResource
             'updated_at' => $this->updated_at?->toIso8601String(),
             'branch' => $this->whenLoaded('branch', fn () => new BranchResource($this->branch)),
             'category' => $this->whenLoaded('category', fn () => new MenuCategoryResource($this->category)),
-            'image_url' => $firstOption?->getFirstMediaUrl('menu-item-options') ?: null,
+            'image_url' => ($media = $firstOption?->getFirstMedia('menu-item-options'))
+                ? route('media.show', $media)
+                : null,
             'options' => MenuItemOptionResource::collection($this->whenLoaded('options')),
             'tags' => MenuTagResource::collection($this->whenLoaded('tags')),
             'add_ons' => MenuAddOnResource::collection($this->whenLoaded('addOns')),
