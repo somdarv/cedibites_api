@@ -111,36 +111,36 @@ Fix menu item images not displaying on customer-facing menu pages. API returned 
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Http/Controllers/Api/MediaController.php` | **NEW** — Controller that serves media files through Laravel. Includes ETag/Last-Modified headers, 304 Not Modified conditional caching, `Cache-Control: public, max-age=31536000, immutable`. Supports optional `/{conversion}` parameter for thumbnail serving. | Bypasses Nginx 403 on `/storage/` paths; gives application-level control over caching and conversions |
-| `routes/public.php` | Added `GET /v1/media/{media}/{conversion?}` public route named `media.show` | Public endpoint for all media access — no auth required for menu images |
-| `app/Http/Resources/MenuItemResource.php` | `image_url` now uses `route('media.show', $media)` instead of `getFirstMediaUrl()`. Added `thumbnail_url` field using `route('media.show', [$media, 'thumbnail'])` | Route-based URLs are always accessible; thumbnails enable faster grid loading |
-| `app/Http/Resources/MenuItemOptionResource.php` | Same changes as MenuItemResource: route-based `image_url` and new `thumbnail_url` | Options also have images; same fix needed |
-| `app/Models/MenuItemOption.php` | Added Spatie `registerMediaConversions()` with `thumbnail` conversion (400×300px, sharpened, `nonQueued()`) | Thumbnails generated synchronously on upload for option images |
+| File                                            | Change                                                                                                                                                                                                                                                            | Reason                                                                                                |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/MediaController.php`  | **NEW** — Controller that serves media files through Laravel. Includes ETag/Last-Modified headers, 304 Not Modified conditional caching, `Cache-Control: public, max-age=31536000, immutable`. Supports optional `/{conversion}` parameter for thumbnail serving. | Bypasses Nginx 403 on `/storage/` paths; gives application-level control over caching and conversions |
+| `routes/public.php`                             | Added `GET /v1/media/{media}/{conversion?}` public route named `media.show`                                                                                                                                                                                       | Public endpoint for all media access — no auth required for menu images                               |
+| `app/Http/Resources/MenuItemResource.php`       | `image_url` now uses `route('media.show', $media)` instead of `getFirstMediaUrl()`. Added `thumbnail_url` field using `route('media.show', [$media, 'thumbnail'])`                                                                                                | Route-based URLs are always accessible; thumbnails enable faster grid loading                         |
+| `app/Http/Resources/MenuItemOptionResource.php` | Same changes as MenuItemResource: route-based `image_url` and new `thumbnail_url`                                                                                                                                                                                 | Options also have images; same fix needed                                                             |
+| `app/Models/MenuItemOption.php`                 | Added Spatie `registerMediaConversions()` with `thumbnail` conversion (400×300px, sharpened, `nonQueued()`)                                                                                                                                                       | Thumbnails generated synchronously on upload for option images                                        |
 
 ### Decisions
 
 - **Decision**: Serve media through Laravel (MediaController) rather than fixing Nginx config
-  - **Alternatives**: Fix Nginx config to allow `/storage/` access; use a CDN
-  - **Rationale**: (a) Can't guarantee server Nginx config access in all environments, (b) application-level caching headers (ETag, 304), (c) supports conversion parameter for thumbnails, (d) works identically in dev and production
+    - **Alternatives**: Fix Nginx config to allow `/storage/` access; use a CDN
+    - **Rationale**: (a) Can't guarantee server Nginx config access in all environments, (b) application-level caching headers (ETag, 304), (c) supports conversion parameter for thumbnails, (d) works identically in dev and production
 - **Decision**: `Cache-Control: public, max-age=31536000, immutable` on media responses
-  - **Rationale**: Spatie uses unique media IDs — once an image is uploaded, its URL never changes. The image at `/v1/media/17` is permanent. Immutable caching is safe and maximizes CDN/browser cache hits.
+    - **Rationale**: Spatie uses unique media IDs — once an image is uploaded, its URL never changes. The image at `/v1/media/17` is permanent. Immutable caching is safe and maximizes CDN/browser cache hits.
 - **Decision**: Thumbnail conversion is `nonQueued()` — generated synchronously on upload
-  - **Alternatives**: Queued conversion via Laravel jobs
-  - **Rationale**: Menu images are uploaded infrequently (admin action, not user-facing); sync generation is simpler and avoids "thumbnail not ready" race conditions
+    - **Alternatives**: Queued conversion via Laravel jobs
+    - **Rationale**: Menu images are uploaded infrequently (admin action, not user-facing); sync generation is simpler and avoids "thumbnail not ready" race conditions
 - **Decision**: 400×300px thumbnail size with sharpening
-  - **Rationale**: Matches typical card grid display size; sharpening compensates for downscale blur
+    - **Rationale**: Matches typical card grid display size; sharpening compensates for downscale blur
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Triggered By |
-|----------------------|--------|--------------|
-| `next.config.ts` | Removed `unoptimized: true`, added `remotePatterns` for API domains | Image URLs now point to API host — Next.js needs to proxy/optimize them |
-| `types/api.ts` | Added `thumbnail_url` to `MenuItem` and `MenuItemOption` interfaces | New `thumbnail_url` field in API resources |
-| `app/components/providers/MenuDiscoveryProvider.tsx` | Maps `thumbnail_url` → `thumbnail` in search items | Consumer of new thumbnail data |
-| `app/components/ui/MenuItemCard.tsx` | Prefers `thumbnail` over `image` for grid display | Performance optimization using new thumbnails |
-| `lib/utils/compressImage.ts`, `lib/api/services/menu.service.ts`, `app/admin/menu/page.tsx` | Removed debug `console.log` statements | Cleanup from previous image upload session |
+| File (Frontend repo)                                                                        | Change                                                              | Triggered By                                                            |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `next.config.ts`                                                                            | Removed `unoptimized: true`, added `remotePatterns` for API domains | Image URLs now point to API host — Next.js needs to proxy/optimize them |
+| `types/api.ts`                                                                              | Added `thumbnail_url` to `MenuItem` and `MenuItemOption` interfaces | New `thumbnail_url` field in API resources                              |
+| `app/components/providers/MenuDiscoveryProvider.tsx`                                        | Maps `thumbnail_url` → `thumbnail` in search items                  | Consumer of new thumbnail data                                          |
+| `app/components/ui/MenuItemCard.tsx`                                                        | Prefers `thumbnail` over `image` for grid display                   | Performance optimization using new thumbnails                           |
+| `lib/utils/compressImage.ts`, `lib/api/services/menu.service.ts`, `app/admin/menu/page.tsx` | Removed debug `console.log` statements                              | Cleanup from previous image upload session                              |
 
 ### Current State
 
@@ -168,9 +168,9 @@ Investigate the root cause of "images not showing on customer side" and the "Ite
 
 ### Changes Made
 
-| File | Change | Reason |
-| ---- | ------ | ------ |
-| _No backend files changed_ | — | The fix was applied frontend-side only |
+| File                       | Change | Reason                                 |
+| -------------------------- | ------ | -------------------------------------- |
+| _No backend files changed_ | —      | The fix was applied frontend-side only |
 
 ### Investigation Findings
 
@@ -181,17 +181,17 @@ The bug was in the frontend's `syncOptions()` function ordering: it deleted non-
 ### Decisions
 
 - **Decision**: Backend's `count() <= 1` guard in `destroy()` is correct and should NOT be changed
-  - **Rationale**: Menu items must always have at least one option; the guard prevents data integrity issues
+    - **Rationale**: Menu items must always have at least one option; the guard prevents data integrity issues
 - **Decision**: No bulk-sync endpoint needed at this time
-  - **Alternatives**: Could create a `PUT /menu-items/{id}/options` bulk-sync endpoint
-  - **Rationale**: Frontend reorder (upsert-then-delete) is the minimal fix; a bulk endpoint adds complexity without clear benefit right now
+    - **Alternatives**: Could create a `PUT /menu-items/{id}/options` bulk-sync endpoint
+    - **Rationale**: Frontend reorder (upsert-then-delete) is the minimal fix; a bulk endpoint adds complexity without clear benefit right now
 
 ### Cross-Repo Impact
 
-| File (Frontend repo)              | Change                                                                          | Impact                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `app/admin/menu/page.tsx`         | Reordered `syncOptions()`: upsert desired options first, then delete stale ones | Fixes the 422 error when replacing all option keys; fixes downstream image upload failure       |
-| `app/staff/manager/menu/page.tsx` | Same reorder applied to BM menu page                                            | Same fix applied for consistency                                                               |
+| File (Frontend repo)              | Change                                                                          | Impact                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `app/admin/menu/page.tsx`         | Reordered `syncOptions()`: upsert desired options first, then delete stale ones | Fixes the 422 error when replacing all option keys; fixes downstream image upload failure |
+| `app/staff/manager/menu/page.tsx` | Same reorder applied to BM menu page                                            | Same fix applied for consistency                                                          |
 
 ### Current State
 
