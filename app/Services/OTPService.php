@@ -21,7 +21,7 @@ class OTPService
     {
         return Otp::create([
             'phone' => $phone,
-            'otp' => $otp,
+            'otp' => hash('sha256', $otp),
             'expires_at' => now()->addMinutes(5),
             'ip_address' => $ipAddress,
         ]);
@@ -33,7 +33,7 @@ class OTPService
     public function verify(string $phone, string $otp): ?Otp
     {
         $otpRecord = Otp::where('phone', $phone)
-            ->where('otp', $otp)
+            ->where('otp', hash('sha256', $otp))
             ->where('verified', false)
             ->latest()
             ->first();

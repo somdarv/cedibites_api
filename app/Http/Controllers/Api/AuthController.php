@@ -95,12 +95,18 @@ class AuthController extends Controller
         $user = User::where('phone', $phone)->first();
 
         if ($user) {
-            if (! $user->customer) {
+            // Only auto-create Customer if user doesn't already have an Employee record
+            // to prevent unintended dual-identity scenarios
+            if (! $user->customer && ! $user->employee) {
                 Customer::create([
                     'user_id' => $user->id,
                     'is_guest' => false,
                 ]);
                 $user->load('customer');
+            } elseif (! $user->customer && $user->employee) {
+                return response()->unprocessable('This phone number is associated with a staff account. Please use employee login.', [
+                    'phone' => ['This phone number belongs to a staff account'],
+                ]);
             }
 
             $token = $user->createToken('auth-token')->plainTextToken;
@@ -171,6 +177,11 @@ class AuthController extends Controller
         $user = $request->user()->load(['customer', 'roles.permissions']);
 
         if (! $user->customer) {
+            // Only auto-create Customer if user doesn't have an Employee record
+            if ($user->employee) {
+                return response()->success(new AuthUserResource($user->load('roles.permissions')));
+            }
+
             Customer::create([
                 'user_id' => $user->id,
                 'is_guest' => false,

@@ -11,7 +11,7 @@ use App\Http\Controllers\Api\SmartCategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('employee')->group(function () {
-    Route::post('login', [EmployeeAuthController::class, 'login']);
+    Route::post('login', [EmployeeAuthController::class, 'login'])->middleware('throttle:5,1');
 });
 
 Route::get('branches', [BranchController::class, 'index']);

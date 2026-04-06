@@ -1,6 +1,6 @@
 # IAM Auditor Knowledge Base
 
-## Last Updated: 2026-04-06 01:40 by IAM Auditor (initial creation)
+## Last Updated: 2026-04-06 03:00 by IAM Auditor (bulk fix implementation)
 
 ---
 
@@ -53,11 +53,11 @@
 
 **Traits**: HasFactory, LogsActivity, SoftDeletes
 **Activity Logging**: Logs `created` events, tracks `user_id`, `is_guest`, log name `auth`
-**Casts**: `is_guest` → boolean, `status` → string
+**Casts**: `is_guest` → boolean, `status` → CustomerStatus (enum)
 
 **Relationships**: belongsTo(User), hasMany(Address), hasMany(Cart), hasMany(Order), hasMany(Payment)
 
-**⚠️ No CustomerStatus Enum**: Status is a raw string. `CustomerController::suspend()` sets `'suspended'`, `unsuspend()` sets `'active'`. No validation, no enum, no constant. Any typo is silent data corruption.
+**✅ CustomerStatus Enum**: `App\Enums\CustomerStatus` with `Active` and `Suspended` values. Model cast updated to enum. Controller uses enum values.
 
 **⚠️ Guest Lifecycle**: Guest customers have `is_guest = true` and a `guest_session_id`. The `quickRegister()` flow converts them. No cleanup for orphaned guest records.
 
@@ -88,15 +88,15 @@
 
 **Traits**: HasFactory, LogsActivity, SoftDeletes
 **Activity Logging**: Logs `admin` log name, tracks `user_id`, `status`, only dirty, no empty logs
-**Casts**: `status` → EmployeeStatus, `hire_date` → date, `date_of_birth` → date, `performance_rating` → decimal:2
+**Casts**: `status` → EmployeeStatus, `hire_date` → date, `date_of_birth` → date, `performance_rating` → decimal:2, `ssnit_number` → encrypted, `ghana_card_id` → encrypted, `tin_number` → encrypted
 
 **Relationships**: belongsTo(User), belongsToMany(Branch) via `employee_branch` pivot, managedBranches() (scoped to manager role), hasMany(Order, 'assigned_employee_id'), hasMany(Shift)
 
 **Employee Number Generation**: Sequential EMP00001 format inside transaction with `lockForUpdate()` — race-condition safe.
 
-**⚠️ PII Exposure**: `EmployeeResource` exposes ALL PII fields (SSNIT, Ghana Card, TIN, DOB, emergency contacts) to ANY user with `view_employees` permission. No role-based data minimization.
+**✅ PII Encrypted at Rest**: ssnit_number, ghana_card_id, tin_number cast as `encrypted`. `EmployeeResource` conditionally exposes PII only to users with `manage_employees` permission.
 
-**⚠️ Destroy = Suspend Only**: `EmployeeController::destroy()` sets status to `Suspended` but does NOT: (a) soft-delete the Employee record, (b) revoke Sanctum tokens, (c) end active shifts. The "destroyed" employee can still authenticate.
+**✅ Destroy Revokes Tokens + Ends Shifts**: `EmployeeController::destroy()` now sets status to Suspended, revokes all tokens, ends active shifts, and broadcasts `session.revoked`.
 
 ### 1.4 Authentication Flows
 
@@ -165,7 +165,7 @@
 **Model**: `app/Models/Otp.php`
 
 - **Generation**: 6-digit random numeric string
-- **Storage**: Phone + OTP stored in PLAIN TEXT. IP address optionally stored.
+- **Storage**: Phone + OTP hash stored. OTP is SHA-256 hashed before storage. IP address optionally stored.
 - **Expiry**: 5 minutes (`expires_at`)
 - **Verification Window**: 10 minutes (for `hasRecentlyVerified`)
 - **Cleanup**: `OTPService::cleanup()` deletes expired records. ⚠️ NOW scheduled hourly via `routes/console.php` (`Schedule::command('otp:cleanup')->hourly()`)
@@ -182,7 +182,7 @@
 
 - `$user->tokens()->delete()` — revokes ALL tokens. Used in: customer logout, employee logout, force-logout
 
-**Token Expiry**: `config/sanctum.php` → `expiration: null` (tokens NEVER expire)
+**Token Expiry**: `config/sanctum.php` → `expiration: env('SANCTUM_TOKEN_EXPIRATION', 1440)` (24 hours default)
 
 **Concurrent Sessions**: No limit. Each login creates a new token without revoking old ones.
 
@@ -251,16 +251,16 @@
 
 ### 2.3 Route-Level Access Map
 
-| Route File             | Auth Layer    | Middleware                                                                      | Who Can Access                                            | Last Audited |
-| ---------------------- | ------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------ |
-| `routes/public.php`    | None          | None                                                                            | Anyone — employee login, branches, menu, promos           | 2026-04-06   |
-| `routes/auth.php`      | Mixed         | throttle:otp-send/verify, throttle:5,1 (employee), auth:sanctum (user/logout)   | Public + authenticated customers                          | 2026-04-06   |
-| `routes/cart.php`      | cart.identity | EnsureCartIdentity (guest session or auth'd customer)                           | Guests + authenticated customers                          | 2026-04-06   |
-| `routes/protected.php` | auth:sanctum  | **NONE beyond auth**                                                            | ⚠️ **ANY authenticated user** (customer, employee, admin) | 2026-04-06   |
-| `routes/employee.php`  | auth:sanctum  | Mixed — employee orders require `permission:view_orders`, shifts have **NONE**  | Any authenticated user (shifts unguarded)                 | 2026-04-06   |
-| `routes/manager.php`   | auth:sanctum  | `permission:view_branches` + per-route permissions                              | Users with view_branches (⚠️ no branch ownership check)   | 2026-04-06   |
-| `routes/admin.php`     | auth:sanctum  | Granular per-group permissions + `role:admin\|super_admin` for cancels/settings | Best-protected route file                                 | 2026-04-06   |
-| `routes/promos.php`    | auth:sanctum  | `permission:manage_menu`                                                        | Users with manage_menu permission                         | 2026-04-06   |
+| Route File             | Auth Layer    | Middleware                                                                                | Who Can Access                                                 | Last Audited |
+| ---------------------- | ------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------ |
+| `routes/public.php`    | None          | `throttle:5,1` on employee login                                                          | Anyone — employee login (rate-limited), branches, menu, promos | 2026-04-06   |
+| `routes/auth.php`      | Mixed         | throttle:otp-send/verify, throttle:5,1 (employee+register), auth:sanctum                  | Public + authenticated customers                               | 2026-04-06   |
+| `routes/cart.php`      | cart.identity | EnsureCartIdentity (guest session or auth'd customer)                                     | Guests + authenticated customers                               | 2026-04-06   |
+| `routes/protected.php` | auth:sanctum  | Granular permission middleware per route group                                            | ✅ Customers (own data), staff (per permission)                | 2026-04-06   |
+| `routes/employee.php`  | auth:sanctum  | `password.reset` + `permission:access_pos`/`view_my_shifts`/`manage_shifts`/`view_orders` | Staff with correct permissions                                 | 2026-04-06   |
+| `routes/manager.php`   | auth:sanctum  | `permission:view_branches` + `branch.access` + per-route permissions                      | Managers/admins with branch ownership verified                 | 2026-04-06   |
+| `routes/admin.php`     | auth:sanctum  | Granular per-group permissions + `role:admin\|super_admin` for cancels/settings           | Best-protected route file                                      | 2026-04-06   |
+| `routes/promos.php`    | auth:sanctum  | `permission:manage_menu`                                                                  | Users with manage_menu permission                              | 2026-04-06   |
 
 ### 2.4 Frontend Portal-Permission Gating
 
@@ -288,34 +288,33 @@
 
 ### 3.1 Open Findings
 
-| ID      | Severity | Title                                                                | Location                                                                     | Found      | Description                                                                                                                                                                                                                                                                                                                                                        |
-| ------- | -------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| IAM-001 | Critical | `routes/protected.php` has no role/permission checks                 | `routes/protected.php`                                                       | 2026-04-06 | Any authenticated user (including customers) can: view kitchen orders, view order-manager orders, CRUD any order, initiate refunds, rate menu items. Kitchen/order-manager endpoints should require `access_kitchen`/`access_order_manager`. Order CRUD should scope by ownership (customers) or require staff permissions. Refund should require `update_orders`. |
-| IAM-002 | Critical | Manager routes accept any `{branch}` ID                              | `routes/manager.php`, `BranchController`                                     | 2026-04-06 | Manager routes require `permission:view_branches` but do NOT verify the requesting manager owns/manages the branch in the URL. A manager can query stats, employees, orders, revenue for ANY branch by guessing IDs. No `EnsureBranchAccess` middleware exists.                                                                                                    |
-| IAM-003 | High     | Employee login has no rate limiting                                  | `routes/public.php` line: `Route::post('login', ...)`                        | 2026-04-06 | POST `/employee/login` has no throttle middleware. Brute-force target. Other auth endpoints (forgot/reset password) correctly have `throttle:5,1`.                                                                                                                                                                                                                 |
-| IAM-004 | High     | No `must_reset_password` enforcement middleware                      | Missing middleware                                                           | 2026-04-06 | `User.must_reset_password` flag and `password_reset_required_at` exist. `EmployeeAuthController::changePassword()` clears the flag. But NO middleware blocks API access while flag is true. A compromised initial password works indefinitely.                                                                                                                     |
-| IAM-005 | High     | Sanctum tokens never expire                                          | `config/sanctum.php` → `expiration: null`                                    | 2026-04-06 | Tokens have no configured expiration. A stolen token is valid forever unless explicitly revoked via logout or force-logout.                                                                                                                                                                                                                                        |
-| IAM-006 | High     | `EmployeeController::destroy()` does not revoke tokens               | `app/Http/Controllers/Api/EmployeeController.php`                            | 2026-04-06 | `destroy()` sets status to `Suspended` but does NOT (a) revoke Sanctum tokens, (b) soft-delete the Employee record, (c) end active shifts. The "destroyed" employee retains valid tokens.                                                                                                                                                                          |
-| IAM-007 | Medium   | OTPs stored in plain text                                            | `app/Services/OTPService.php`, `app/Models/Otp.php`                          | 2026-04-06 | 6-digit OTP stored as-is in the `otp` column. Should be hashed (SHA-256 with phone as salt, or bcrypt) to reduce breach impact. Verification would hash input and compare.                                                                                                                                                                                         |
-| IAM-008 | Medium   | OTP cleanup is scheduled but OTP table may still grow                | `routes/console.php`, `OTPService::cleanup()`                                | 2026-04-06 | `otp:cleanup` runs hourly. ✅ Scheduled. However, verified OTPs may not be cleaned (only expired ones). Need to verify `cleanup()` logic covers both expired AND verified records.                                                                                                                                                                                 |
-| IAM-009 | Medium   | No `CustomerStatus` enum — raw string comparison                     | `app/Models/Customer.php`, `app/Http/Controllers/Api/CustomerController.php` | 2026-04-06 | Customer status uses raw strings ('active', 'suspended'). No enum, no validation, no constants. Inconsistent with `EmployeeStatus` which is a proper PHP enum.                                                                                                                                                                                                     |
-| IAM-010 | Medium   | Force-logout does not end active shifts                              | `app/Http/Controllers/Api/EmployeeController.php::forceLogout()`             | 2026-04-06 | Force-logout revokes tokens and broadcasts session.revoked but does NOT end the employee's active Shift (logout_at remains null). Analytics will compute shift duration incorrectly.                                                                                                                                                                               |
-| IAM-011 | Medium   | `verifyOTP` and `user()` auto-create Customer on Employee-only users | `app/Http/Controllers/Api/AuthController.php`                                | 2026-04-06 | If an employee verifies an OTP or hits `/auth/user`, the system auto-creates a Customer record for them. This creates dual-identity (User → Customer + Employee) without explicit consent.                                                                                                                                                                         |
-| IAM-012 | Medium   | PII fields stored unencrypted, over-exposed in EmployeeResource      | `app/Models/Employee.php`, `app/Http/Resources/EmployeeResource.php`         | 2026-04-06 | SSNIT number, Ghana Card ID, TIN number, date_of_birth stored as plain strings. `EmployeeResource` exposes ALL of them to any user with `view_employees` permission (BranchPartner, Manager, Admin). No data minimization based on viewer role.                                                                                                                    |
-| IAM-013 | Low      | Guest session IDs have no server-side tracking or expiry             | `app/Http/Middleware/EnsureCartIdentity.php`                                 | 2026-04-06 | Guest session IDs are client-generated, format-validated only. No server-side session creation, no TTL, no cleanup. Guessable if client uses weak randomness.                                                                                                                                                                                                      |
-| IAM-014 | Low      | `username` field on User appears unused                              | `app/Models/User.php`                                                        | 2026-04-06 | `username` is in `$fillable` but not used in any authentication flow, controller, or form request. Dead field risk — could cause confusion.                                                                                                                                                                                                                        |
-| IAM-015 | Low      | `employee` role marked "legacy compatibility"                        | `app/Enums/Role.php`                                                         | 2026-04-06 | The `Employee` enum case is marked as legacy. In `RoleSeeder`, its permissions are synced to match `SalesStaff`. In frontend, it maps to `sales_staff`. Still present in enum and potentially assigned to users.                                                                                                                                                   |
-| IAM-016 | Medium   | Shift endpoints have NO permission middleware                        | `routes/employee.php` shift routes                                           | 2026-04-06 | All shift routes (`GET /shifts`, `POST /shifts`, `PATCH /shifts/{shift}/end`, etc.) only require `auth:sanctum`. No `permission:manage_shifts` or `permission:view_my_shifts` checks. Any authenticated user (including customers) can create/view/end shifts.                                                                                                     |
-| IAM-017 | Medium   | POS endpoints have no role/permission checks                         | `routes/employee.php` POS routes                                             | 2026-04-06 | All POS routes (`POST /pos/orders`, `POST /pos/checkout-sessions`, confirm-cash, confirm-card, etc.) only require `auth:sanctum`. No `permission:access_pos` check. A customer with a valid token could potentially create POS orders.                                                                                                                             |
-| IAM-018 | Low      | `auth/register` and `auth/quick-register` have no rate limiting      | `routes/auth.php`                                                            | 2026-04-06 | Only `send-otp` and `verify-otp` have throttle middleware. `register` and `quick-register` are unthrottled. `quick-register` is particularly dangerous as it's public and can create/merge users.                                                                                                                                                                  |
-| IAM-019 | Medium   | `orders/by-number/{orderNumber}` is public                           | `routes/public.php`                                                          | 2026-04-06 | Anyone can look up order details by order number. If order numbers are sequential or guessable, this leaks order data (customer info, items, amounts). Need to verify if the controller scopes the response data.                                                                                                                                                  |
-| IAM-020 | Low      | Frontend does not handle `session.revoked` or `user.updated` events  | All portals                                                                  | 2026-04-06 | Backend broadcasts `CustomerSessionEvent` and `StaffSessionEvent` on private channels, but no frontend portal has WebSocket listeners to react to force-logout or permission changes in real-time.                                                                                                                                                                 |
+| ID      | Severity | Title                                                               | Location                                      | Found      | Description                                                                                                                                                                                                       |
+| ------- | -------- | ------------------------------------------------------------------- | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IAM-008 | Medium   | OTP cleanup is scheduled but OTP table may still grow               | `routes/console.php`, `OTPService::cleanup()` | 2026-04-06 | `otp:cleanup` runs hourly. ✅ Scheduled. However, verified OTPs may not be cleaned (only expired ones). Need to verify `cleanup()` logic covers both expired AND verified records.                                |
+| IAM-013 | Low      | Guest session IDs have no server-side tracking or expiry            | `app/Http/Middleware/EnsureCartIdentity.php`  | 2026-04-06 | Guest session IDs are client-generated, format-validated only. No server-side session creation, no TTL, no cleanup. Guessable if client uses weak randomness.                                                     |
+| IAM-014 | Low      | `username` field on User appears unused                             | `app/Models/User.php`                         | 2026-04-06 | `username` is in `$fillable` but not used in any authentication flow, controller, or form request. Dead field risk — could cause confusion.                                                                       |
+| IAM-015 | Low      | `employee` role marked "legacy compatibility"                       | `app/Enums/Role.php`                          | 2026-04-06 | The `Employee` enum case is marked as legacy. In `RoleSeeder`, its permissions are synced to match `SalesStaff`. In frontend, it maps to `sales_staff`. Still present in enum and potentially assigned to users.  |
+| IAM-019 | Medium   | `orders/by-number/{orderNumber}` is public                          | `routes/public.php`                           | 2026-04-06 | Anyone can look up order details by order number. If order numbers are sequential or guessable, this leaks order data (customer info, items, amounts). Need to verify if the controller scopes the response data. |
+| IAM-020 | Low      | Frontend does not handle `session.revoked` or `user.updated` events | All portals                                   | 2026-04-06 | Backend broadcasts `CustomerSessionEvent` and `StaffSessionEvent` on private channels, but no frontend portal has WebSocket listeners to react to force-logout or permission changes in real-time.                |
 
 ### 3.2 Resolved Findings
 
-| ID  | Severity | Title                    | Found | Resolved | Resolution |
-| --- | -------- | ------------------------ | ----- | -------- | ---------- |
-| —   | —        | No resolved findings yet | —     | —        | —          |
+| ID      | Severity | Title                                                                | Found      | Resolved   | Resolution                                                                                                                                                                                                            |
+| ------- | -------- | -------------------------------------------------------------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IAM-001 | Critical | `routes/protected.php` has no role/permission checks                 | 2026-04-06 | 2026-04-06 | Split into customer-accessible (rate items, view own orders, notifications) and staff-only sections with granular permission middleware (`access_kitchen`, `access_order_manager`, `update_orders`, `delete_orders`). |
+| IAM-002 | Critical | Manager routes accept any `{branch}` ID                              | 2026-04-06 | 2026-04-06 | Created `EnsureBranchAccess` middleware. Verifies user's employee→branches() includes the `{branch}` route parameter. Super admins/admins bypass. Applied to `routes/manager.php`.                                    |
+| IAM-003 | High     | Employee login has no rate limiting                                  | 2026-04-06 | 2026-04-06 | Added `throttle:5,1` middleware to POST `/employee/login` in `routes/public.php`.                                                                                                                                     |
+| IAM-004 | High     | No `must_reset_password` enforcement middleware                      | 2026-04-06 | 2026-04-06 | Created `EnsurePasswordReset` middleware. Registered as `password.reset` alias. Applied to employee POS, shift, and order routes (excluding `me`, `change-password`, `logout`).                                       |
+| IAM-005 | High     | Sanctum tokens never expire                                          | 2026-04-06 | 2026-04-06 | Set `config/sanctum.php` expiration to `env('SANCTUM_TOKEN_EXPIRATION', 1440)` (24 hours default).                                                                                                                    |
+| IAM-006 | High     | `EmployeeController::destroy()` does not revoke tokens               | 2026-04-06 | 2026-04-06 | Added `$employee->user->tokens()->delete()`, shift end (`whereNull('logout_at')->update`), and `StaffSessionEvent` dispatch to `destroy()`.                                                                           |
+| IAM-007 | Medium   | OTPs stored in plain text                                            | 2026-04-06 | 2026-04-06 | OTPs now hashed with `hash('sha256', $otp)` in `OTPService::store()`. Verification hashes input before comparison in `OTPService::verify()`. Plaintext returned only to caller for SMS sending.                       |
+| IAM-009 | Medium   | No `CustomerStatus` enum — raw string comparison                     | 2026-04-06 | 2026-04-06 | Created `CustomerStatus` enum (Active, Suspended). Updated `Customer` model cast from `'string'` to `CustomerStatus::class`. Updated `CustomerController` suspend/unsuspend to use enum values.                       |
+| IAM-010 | Medium   | Force-logout does not end active shifts                              | 2026-04-06 | 2026-04-06 | Added `$employee->shifts()->whereNull('logout_at')->update(['logout_at' => now()])` to both `forceLogout()` and `destroy()`.                                                                                          |
+| IAM-011 | Medium   | `verifyOTP` and `user()` auto-create Customer on Employee-only users | 2026-04-06 | 2026-04-06 | Added employee relationship check. `verifyOTP()` returns 422 if phone belongs to employee. `user()` skips Customer creation for employee users, returns user without Customer.                                        |
+| IAM-012 | Medium   | PII fields stored unencrypted, over-exposed in EmployeeResource      | 2026-04-06 | 2026-04-06 | Added `'encrypted'` cast to ssnit_number, ghana_card_id, tin_number in `Employee` model. `EmployeeResource` now conditionally exposes PII only when `$request->user()->can('manage_employees')`.                      |
+| IAM-016 | Medium   | Shift endpoints have NO permission middleware                        | 2026-04-06 | 2026-04-06 | Added `permission:view_my_shifts` to shift route group. Write operations (start/end/addOrder) additionally require `permission:manage_shifts`.                                                                        |
+| IAM-017 | Medium   | POS endpoints have no role/permission checks                         | 2026-04-06 | 2026-04-06 | Added `permission:access_pos` to POS route group in `routes/employee.php`.                                                                                                                                            |
+| IAM-018 | Low      | `auth/register` and `auth/quick-register` have no rate limiting      | 2026-04-06 | 2026-04-06 | Added `throttle:5,1` middleware to both `register` and `quick-register` routes in `routes/auth.php`.                                                                                                                  |
 
 ### 3.3 Accepted Risks
 
@@ -344,7 +343,7 @@
 | Guest sessions/carts   | No retention policy     | None                               | None         | ❌ Not implemented                 |
 | Soft-deleted users     | No retention policy     | None                               | None         | ❌ Not implemented                 |
 | Soft-deleted customers | N/A (hard deleted)      | CustomerController::destroy()      | N/A          | ⚠️ Hard delete — no soft delete    |
-| Sanctum tokens         | Never expire            | None                               | None         | ❌ Not implemented                 |
+| Sanctum tokens         | 24 hours (configurable) | Sanctum built-in expiry            | Automatic    | ✅ Implemented (env override)      |
 | Activity logs          | No retention policy     | None                               | None         | ❌ Not implemented                 |
 | Password reset tokens  | 1-hour expiry per token | Deleted on use via resetPassword() | Per-use only | ⚠️ Expired tokens not bulk-cleaned |
 
@@ -385,4 +384,5 @@
 
 | Date       | Section Updated | Summary of Change                                                                                                                               | Trigger          |
 | ---------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 2026-04-06 | §3.1, §3.2, §7  | Bulk fix implementation: 14 of 20 findings resolved. Moved IAM-001 through IAM-018 (minus IAM-008/013/014/015/019/020) to §3.2. 6 remain open.  | Fix all          |
 | 2026-04-06 | All sections    | Initial KB creation. Comprehensive audit of both repos. 20 findings documented (2 Critical, 4 High, 9 Medium, 5 Low). All 7 sections populated. | First activation |

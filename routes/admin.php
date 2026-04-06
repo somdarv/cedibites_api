@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ActivityLogController;
+use App\Http\Controllers\Api\Admin\SmartCategorySettingController;
 use App\Http\Controllers\Api\AdminAnalyticsController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\AdminReportController;
@@ -93,6 +94,14 @@ Route::prefix('admin')->group(function () {
         Route::patch('menu-items/{menuItem}/options/{option}', [MenuItemOptionController::class, 'update']);
         Route::delete('menu-items/{menuItem}/options/{option}', [MenuItemOptionController::class, 'destroy']);
         Route::post('menu-items/{menuItem}/options/{option}/image', [MenuItemOptionController::class, 'uploadImage']);
+
+        // Smart category settings
+        Route::get('smart-categories', [SmartCategorySettingController::class, 'index']);
+        Route::patch('smart-categories/{smartCategorySetting}', [SmartCategorySettingController::class, 'update']);
+        Route::post('smart-categories/reorder', [SmartCategorySettingController::class, 'reorder']);
+        Route::get('smart-categories/{smartCategorySetting}/preview', [SmartCategorySettingController::class, 'preview']);
+        Route::post('smart-categories/warm-cache', [SmartCategorySettingController::class, 'warmCache']);
+        Route::post('smart-categories/{smartCategorySetting}/reset', [SmartCategorySettingController::class, 'resetToDefault']);
     });
 
     Route::middleware('permission:view_orders')->group(function () {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\CustomerStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
@@ -119,7 +120,7 @@ class CustomerController extends Controller
     public function suspend(Request $request, Customer $customer): JsonResponse
     {
         try {
-            $customer->update(['status' => 'suspended']);
+            $customer->update(['status' => CustomerStatus::Suspended]);
 
             activity('admin')
                 ->causedBy($request->user())
@@ -143,7 +144,7 @@ class CustomerController extends Controller
     public function unsuspend(Request $request, Customer $customer): JsonResponse
     {
         try {
-            $customer->update(['status' => 'active']);
+            $customer->update(['status' => CustomerStatus::Active]);
 
             activity('admin')
                 ->causedBy($request->user())

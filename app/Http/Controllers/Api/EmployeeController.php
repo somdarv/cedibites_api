@@ -242,8 +242,15 @@ class EmployeeController extends Controller
      */
     public function destroy(Employee $employee): JsonResponse
     {
-        // Soft delete by setting status to suspended
         $employee->update(['status' => EmployeeStatus::Suspended->value]);
+
+        // Revoke all tokens so suspended employee cannot continue using the API
+        $employee->user->tokens()->delete();
+
+        // End any active shifts
+        $employee->shifts()->whereNull('logout_at')->update(['logout_at' => now()]);
+
+        StaffSessionEvent::dispatch($employee->user, 'session.revoked');
 
         return response()->success(null, 'Employee deactivated successfully.');
     }
@@ -256,6 +263,9 @@ class EmployeeController extends Controller
         StaffSessionEvent::dispatch($employee->user, 'session.revoked');
 
         $employee->user->tokens()->delete();
+
+        // End any active shifts to keep analytics consistent
+        $employee->shifts()->whereNull('logout_at')->update(['logout_at' => now()]);
 
         activity('admin')
             ->causedBy(request()->user())
