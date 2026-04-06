@@ -13,9 +13,8 @@ class OrderFactory extends Factory
     {
         $subtotal = fake()->randomFloat(2, 50, 200);
         $deliveryFee = fake()->randomFloat(2, 10, 20);
-        $taxRate = 0.025;
-        $taxAmount = $subtotal * $taxRate;
-        $total = $subtotal + $deliveryFee + $taxAmount;
+        $serviceCharge = round($subtotal * 0.025, 2);
+        $total = $subtotal + $deliveryFee + $serviceCharge;
 
         return [
             'order_number' => 'CB'.fake()->unique()->numberBetween(100000, 999999),
@@ -32,8 +31,7 @@ class OrderFactory extends Factory
             'delivery_note' => fake()->optional()->sentence(),
             'subtotal' => $subtotal,
             'delivery_fee' => $deliveryFee,
-            'tax_rate' => $taxRate,
-            'tax_amount' => $taxAmount,
+            'service_charge' => $serviceCharge,
             'total_amount' => $total,
             'status' => fake()->randomElement(['received', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'completed']),
             'estimated_prep_time' => fake()->numberBetween(15, 45),

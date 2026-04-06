@@ -33,6 +33,9 @@ class MenuItemResource extends JsonResource
             'image_url' => ($media = $firstOption?->getFirstMedia('menu-item-options'))
                 ? route('media.show', $media)
                 : null,
+            'thumbnail_url' => $media
+                ? route('media.show', ['media' => $media, 'conversion' => 'thumbnail'])
+                : null,
             'options' => MenuItemOptionResource::collection($this->whenLoaded('options')),
             'tags' => MenuTagResource::collection($this->whenLoaded('tags')),
             'add_ons' => MenuAddOnResource::collection($this->whenLoaded('addOns')),

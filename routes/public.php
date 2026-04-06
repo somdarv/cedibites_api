@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MenuCategoryController;
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PromoController;
+use App\Http\Controllers\Api\SmartCategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('employee')->group(function () {
@@ -21,7 +22,8 @@ Route::get('branches/{branch}/menu-items/{itemId}/available', [BranchController:
 Route::get('menu-categories', [MenuCategoryController::class, 'index']);
 Route::get('menu-items', [MenuItemController::class, 'index']);
 Route::get('menu-items/{menuItem}', [MenuItemController::class, 'show']);
-Route::get('media/{media}', MediaController::class)->name('media.show');
+Route::get('smart-categories', [SmartCategoryController::class, 'index']);
+Route::get('media/{media}/{conversion?}', MediaController::class)->name('media.show');
 Route::get('orders/by-number/{orderNumber}', [OrderController::class, 'showByNumber']);
 Route::post('promos/resolve', [PromoController::class, 'resolve']);
 
