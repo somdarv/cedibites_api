@@ -25,6 +25,7 @@ Route::prefix('admin')->group(function () {
     });
 
     Route::middleware('permission:view_employees')->group(function () {
+        Route::get('employees/sessions/active', [EmployeeController::class, 'activeSessions']);
         Route::get('employees', [EmployeeController::class, 'index']);
         Route::get('employees/{employee}', [EmployeeController::class, 'show']);
     });
@@ -53,6 +54,7 @@ Route::prefix('admin')->group(function () {
         Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
         Route::patch('customers/{customer}/suspend', [CustomerController::class, 'suspend']);
         Route::patch('customers/{customer}/unsuspend', [CustomerController::class, 'unsuspend']);
+        Route::post('customers/{customer}/force-logout', [CustomerController::class, 'forceLogout']);
     });
 
     Route::middleware('permission:view_branches')->group(function () {

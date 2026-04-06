@@ -50,6 +50,46 @@ class CheckoutSessionController extends Controller
             'momo_number' => ['nullable', 'string', 'max:20'],
         ]);
 
+        // ── Branch availability checks ──────────────────────────────────
+        $branch = Branch::with(['orderTypes', 'paymentMethods'])->findOrFail($validated['branch_id']);
+
+        if (! $branch->is_active) {
+            return response()->json(['message' => 'This branch is currently inactive and not accepting orders.'], 422);
+        }
+
+        if (! $branch->isCurrentlyOpen()) {
+            return response()->json(['message' => 'This branch is currently closed. Please check back during operating hours.'], 422);
+        }
+
+        // Validate the selected order type is enabled for this branch
+        $orderTypeEnabled = $branch->orderTypes
+            ->where('order_type', $validated['order_type'])
+            ->where('is_enabled', true)
+            ->isNotEmpty();
+
+        if (! $orderTypeEnabled) {
+            $label = ucfirst($validated['order_type']);
+
+            return response()->json(['message' => "{$label} is not available at this branch."], 422);
+        }
+
+        // Validate the selected payment method is enabled for this branch
+        // Map frontend payment keys to DB payment keys
+        $paymentMethodMap = [
+            'mobile_money' => 'momo',
+            'cash' => 'cash_on_delivery',
+        ];
+        $dbPaymentKey = $paymentMethodMap[$validated['payment_method']] ?? $validated['payment_method'];
+
+        $paymentEnabled = $branch->paymentMethods
+            ->where('payment_method', $dbPaymentKey)
+            ->where('is_enabled', true)
+            ->isNotEmpty();
+
+        if (! $paymentEnabled) {
+            return response()->json(['message' => 'This payment method is not available at the selected branch.'], 422);
+        }
+
         // Resolve cart identity
         $identity = $this->resolveCartIdentity($request);
 

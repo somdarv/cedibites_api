@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\CustomerStatus;
+use App\Events\CustomerSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
@@ -122,6 +123,12 @@ class CustomerController extends Controller
         try {
             $customer->update(['status' => CustomerStatus::Suspended]);
 
+            // Revoke all auth tokens so the customer is immediately logged out
+            if ($customer->user) {
+                CustomerSessionEvent::dispatch($customer->user);
+                $customer->user->tokens()->delete();
+            }
+
             activity('admin')
                 ->causedBy($request->user())
                 ->performedOn($customer)
@@ -160,6 +167,26 @@ class CustomerController extends Controller
         } catch (\Exception $e) {
             return response()->server_error();
         }
+    }
+
+    /**
+     * Force-logout a customer by revoking all tokens.
+     */
+    public function forceLogout(Request $request, Customer $customer): JsonResponse
+    {
+        if ($customer->user) {
+            CustomerSessionEvent::dispatch($customer->user);
+            $customer->user->tokens()->delete();
+        }
+
+        activity('admin')
+            ->causedBy($request->user())
+            ->performedOn($customer)
+            ->event('customer_force_logout')
+            ->withProperties(['customer_id' => $customer->id])
+            ->log('Customer force-logout: '.($customer->user?->name ?? $customer->guest_session_id));
+
+        return response()->success(null, 'Customer logged out successfully.');
     }
 
     /**

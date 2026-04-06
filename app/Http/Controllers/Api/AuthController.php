@@ -111,6 +111,11 @@ class AuthController extends Controller
 
             $token = $user->createToken('auth-token')->plainTextToken;
 
+            activity('auth')
+                ->causedBy($user)
+                ->event('customer_login')
+                ->log("Customer login: {$user->name} ({$user->phone})");
+
             return response()->success([
                 'token' => $token,
                 'user' => new AuthUserResource($user->load(['customer', 'roles.permissions'])),
@@ -260,6 +265,11 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse|Response
     {
         $user = $request->user();
+
+        activity('auth')
+            ->causedBy($user)
+            ->event('customer_logout')
+            ->log("Customer logout: {$user->name} ({$user->phone})");
 
         CustomerSessionEvent::dispatch($user);
 

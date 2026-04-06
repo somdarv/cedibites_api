@@ -11,7 +11,6 @@ enum Role: string
     case Admin = 'admin';
     case Manager = 'manager';
     case SalesStaff = 'sales_staff';
-    case Employee = 'employee'; // legacy compatibility
     case SuperAdmin = 'super_admin';
     case BranchPartner = 'branch_partner';
     case CallCenter = 'call_center';

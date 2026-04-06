@@ -16,7 +16,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class EmployeeController extends Controller
 {
@@ -55,8 +54,26 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Store a newly created resource in storage.
+     * List employees with active auth tokens (active sessions).
      */
+    public function activeSessions(): JsonResponse
+    {
+        $employees = Employee::with(['user', 'branches'])
+            ->whereHas('user', fn ($q) => $q->whereHas('tokens'))
+            ->get()
+            ->map(fn (Employee $emp) => [
+                'id' => $emp->id,
+                'name' => $emp->user->name,
+                'phone' => $emp->user->phone,
+                'status' => $emp->status->value,
+                'branches' => $emp->branches->pluck('name'),
+                'active_tokens' => $emp->user->tokens()->count(),
+                'last_used_at' => $emp->user->tokens()->latest('last_used_at')->value('last_used_at'),
+            ]);
+
+        return response()->success($employees);
+    }
+
     /**
      * Store a newly created resource in storage.
      */
@@ -67,7 +84,7 @@ class EmployeeController extends Controller
         try {
             $password = $request->filled('password')
                 ? $request->password
-                : Str::password(12);
+                : $this->generateSimplePassword();
 
             // Create user
             $user = User::create([
@@ -277,9 +294,7 @@ class EmployeeController extends Controller
             ])
             ->log("Forced logout: {$employee->user->name}");
 
-        return response()->json([
-            'message' => 'Employee logged out successfully.',
-        ]);
+        return response()->success(null, 'Employee logged out successfully.');
     }
 
     /**
@@ -304,8 +319,25 @@ class EmployeeController extends Controller
             ])
             ->log("Password reset required: {$employee->user->name}");
 
-        return response()->json([
-            'message' => 'Password reset required successfully.',
-        ]);
+        return response()->success(null, 'Password reset required successfully.');
+    }
+
+    /**
+     * Generate a simple, human-friendly temporary password.
+     *
+     * Format: AdjectiveNoun + 1-3 digits + special char (e.g. HappyBlue42!)
+     */
+    private function generateSimplePassword(): string
+    {
+        $adjectives = ['Happy', 'Bright', 'Quick', 'Lucky', 'Cool', 'Bold', 'Sweet', 'Grand', 'Smart', 'Calm', 'Warm', 'Fresh', 'Kind', 'Safe', 'Gold'];
+        $nouns = ['Star', 'Blue', 'Wave', 'Moon', 'Tree', 'Lake', 'Fire', 'Rock', 'Bird', 'Lion', 'Bear', 'Rain', 'Peak', 'Sand', 'Box'];
+        $specials = ['!', '@', '#', '$'];
+
+        $adjective = $adjectives[array_rand($adjectives)];
+        $noun = $nouns[array_rand($nouns)];
+        $digits = random_int(10, 999);
+        $special = $specials[array_rand($specials)];
+
+        return $adjective.$noun.$digits.$special;
     }
 }

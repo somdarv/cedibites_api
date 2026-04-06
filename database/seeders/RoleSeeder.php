@@ -147,12 +147,5 @@ class RoleSeeder extends Seeder
             Permission::ViewMyShifts->value,
         ]);
 
-        // Keep legacy "employee" role aligned for backward compatibility.
-        $legacyEmployee = Role::where('name', RoleEnum::Employee->value)
-            ->where('guard_name', 'api')
-            ->first();
-        if ($legacyEmployee instanceof Role) {
-            $this->addPermissions($legacyEmployee, $salesStaff->permissions->pluck('name')->all());
-        }
     }
 }
