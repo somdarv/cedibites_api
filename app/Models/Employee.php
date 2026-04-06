@@ -50,6 +50,9 @@ class Employee extends Model
             'hire_date' => 'date',
             'date_of_birth' => 'date',
             'performance_rating' => 'decimal:2',
+            'ssnit_number' => 'encrypted',
+            'ghana_card_id' => 'encrypted',
+            'tin_number' => 'encrypted',
         ];
     }
 

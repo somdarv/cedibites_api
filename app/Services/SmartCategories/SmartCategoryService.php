@@ -4,6 +4,7 @@ namespace App\Services\SmartCategories;
 
 use App\Enums\SmartCategory;
 use App\Models\MenuItem;
+use App\Models\SmartCategorySetting;
 use App\Services\SmartCategories\Resolvers\NewArrivalsResolver;
 use App\Services\SmartCategories\Resolvers\OrderAgainResolver;
 use App\Services\SmartCategories\Resolvers\PopularResolver;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Cache;
  * Smart categories are code-defined virtual categories whose items are
  * computed from order data, ratings, timestamps, or customer history.
  * Results are cached per branch and refreshed by a scheduled command.
+ * Admin settings (enabled, item_limit, time windows) are respected.
  */
 class SmartCategoryService
 {
@@ -27,28 +29,35 @@ class SmartCategoryService
     /**
      * Get all smart categories that should be visible right now for a branch.
      *
-     * Filters by time-of-day visibility and customer requirements.
-     * Returns each category with its resolved item IDs.
+     * Filters by admin settings (enabled), time-of-day visibility, and customer requirements.
+     * Returns each category with its resolved item IDs, ordered by display_order.
      *
      * @return array<int, array{slug: string, name: string, icon: string, item_ids: int[]}>
      */
     public function getActiveForContext(int $branchId, ?int $customerId = null): array
     {
         $currentHour = (int) now()->format('G');
+        $settings = $this->getSettings();
         $results = [];
 
-        foreach (SmartCategory::cases() as $category) {
+        foreach ($settings as $setting) {
+            if (! $setting->is_enabled) {
+                continue;
+            }
+
+            $category = $setting->smartCategory();
+
             // Skip customer-only categories for guests
             if ($category->requiresCustomer() && $customerId === null) {
                 continue;
             }
 
             // Skip time-based categories outside their visible window
-            if (! $category->isVisibleAtHour($currentHour)) {
+            if (! $this->isVisibleAtHour($setting, $currentHour)) {
                 continue;
             }
 
-            $itemIds = $this->resolve($category, $branchId, $customerId);
+            $itemIds = $this->resolve($category, $branchId, $customerId, $setting->item_limit);
 
             // Only include categories that have items
             if ($itemIds->isEmpty()) {
@@ -72,36 +81,46 @@ class SmartCategoryService
      *
      * @return Collection<int, int>
      */
-    public function resolve(SmartCategory $category, int $branchId, ?int $customerId = null): Collection
+    public function resolve(SmartCategory $category, int $branchId, ?int $customerId = null, ?int $limit = null): Collection
     {
+        $limit ??= $this->getSettingFor($category)?->item_limit ?? $category->defaultLimit();
+
         // Personalized categories (OrderAgain) are computed live per customer
         if ($category->requiresCustomer()) {
             return $this->getResolver($category)
-                ->resolve($branchId, $category->defaultLimit(), $customerId);
+                ->resolve($branchId, $limit, $customerId);
         }
 
         $cacheKey = $this->cacheKey($category, $branchId);
 
-        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($category, $branchId) {
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($category, $branchId, $limit) {
             return $this->getResolver($category)
-                ->resolve($branchId, $category->defaultLimit());
+                ->resolve($branchId, $limit);
         });
     }
 
     /**
-     * Warm the cache for all non-personalized smart categories for a branch.
+     * Warm the cache for all enabled, non-personalized smart categories for a branch.
      * Called by the scheduled command.
      */
     public function warmCacheForBranch(int $branchId): void
     {
-        foreach (SmartCategory::cases() as $category) {
+        $settings = $this->getSettings();
+
+        foreach ($settings as $setting) {
+            if (! $setting->is_enabled) {
+                continue;
+            }
+
+            $category = $setting->smartCategory();
+
             if ($category->requiresCustomer()) {
                 continue;
             }
 
             $cacheKey = $this->cacheKey($category, $branchId);
             $itemIds = $this->getResolver($category)
-                ->resolve($branchId, $category->defaultLimit());
+                ->resolve($branchId, $setting->item_limit);
 
             Cache::put($cacheKey, $itemIds, self::CACHE_TTL_SECONDS);
         }
@@ -109,7 +128,7 @@ class SmartCategoryService
 
     /**
      * Invalidate all smart category caches for a branch.
-     * Useful after bulk menu changes.
+     * Useful after bulk menu changes or settings changes.
      */
     public function invalidateBranch(int $branchId): void
     {
@@ -150,7 +169,7 @@ class SmartCategoryService
             ->sortBy(fn (MenuItem $item) => $itemIds->search($item->id));
     }
 
-    private function getResolver(SmartCategory $category): SmartCategoryResolver
+    public function getResolver(SmartCategory $category): SmartCategoryResolver
     {
         return match ($category) {
             SmartCategory::MostPopular => new PopularResolver,
@@ -163,6 +182,53 @@ class SmartCategoryService
             SmartCategory::LateNightBites => new TimeBasedResolver($category),
             SmartCategory::OrderAgain => new OrderAgainResolver,
         };
+    }
+
+    /**
+     * Check visibility at a given hour, using custom time window if set.
+     */
+    private function isVisibleAtHour(SmartCategorySetting $setting, int $hour): bool
+    {
+        $category = $setting->smartCategory();
+
+        // Non-time-based categories with no custom window are always visible
+        if (! $category->isTimeBased() && ! $setting->hasCustomTimeWindow()) {
+            return true;
+        }
+
+        // Use custom time window from settings if set, otherwise fall back to enum defaults
+        $start = $setting->visible_hour_start;
+        $end = $setting->visible_hour_end;
+
+        if ($start === null || $end === null) {
+            return $category->isVisibleAtHour($hour);
+        }
+
+        // Handle overnight windows (e.g. 21 → 3)
+        if ($start > $end) {
+            return $hour >= $start || $hour < $end;
+        }
+
+        return $hour >= $start && $hour < $end;
+    }
+
+    /** Get the setting row for a specific smart category. */
+    private function getSettingFor(SmartCategory $category): ?SmartCategorySetting
+    {
+        return $this->getSettings()->firstWhere('slug', $category->value);
+    }
+
+    /**
+     * Load all settings ordered by display_order.
+     * Cached in memory for the request lifecycle.
+     *
+     * @return Collection<int, SmartCategorySetting>
+     */
+    private function getSettings(): Collection
+    {
+        return once(fn () => SmartCategorySetting::query()
+            ->orderBy('display_order')
+            ->get());
     }
 
     private function cacheKey(SmartCategory $category, int $branchId): string

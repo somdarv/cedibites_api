@@ -2,7 +2,7 @@
 
 > **Purpose**: Living record of all changes, decisions, and current state of the CediBites Laravel API. Maintained by the Project Chronicle agent. Read this before starting work on any area.
 
-> **Current Branch**: `payment-order-bug-fixes` (off `master`)
+> **Current Branch**: `menu-audit` (off `master`)
 
 ---
 
@@ -22,10 +22,10 @@
 | `routes/promos.php`    | Promo/discount management                   |
 | `routes/channels.php`  | WebSocket/Reverb broadcasting channels      |
 
-### Models (29)
+### Models (30)
 
 **Core**: User, Customer, Employee, Branch, Address
-**Menu**: MenuItem, MenuCategory, MenuTag, MenuAddOn, MenuItemOption, MenuItemOptionBranchPrice, MenuItemRating
+**Menu**: MenuItem, MenuCategory, MenuTag, MenuAddOn, MenuItemOption, MenuItemOptionBranchPrice, MenuItemRating, SmartCategorySetting
 **Orders**: Order, OrderItem, OrderStatusHistory, ShiftOrder, CheckoutSession
 **Shopping**: Cart, CartItem
 **Financial**: Payment, Promo
@@ -45,6 +45,7 @@
 | `PromoResolutionService` | Promo code validation & discount                                       |
 | `AnalyticsService`       | Dashboard metrics & reporting                                          |
 | `SystemSettingService`   | Global config (cache-backed, 1hr TTL)                                  |
+| `SmartCategoryService`   | Smart category orchestration (strategy pattern, 6hr cache TTL)         |
 
 ### Key Architecture
 
@@ -100,6 +101,153 @@ What the system looks like after changes.
 ### Pending / Follow-up
 Items still needing attention.
 -->
+
+---
+
+## [2026-04-06] Session: Smart Categories Admin Settings — Full CRUD + Service Integration
+
+### Intent
+
+Build the admin configuration backend for smart categories. The initial smart categories system was code-only — categories were computed from enum definitions with no runtime configurability. This session adds a `smart_category_settings` table and full admin CRUD so admins can enable/disable categories, adjust item limits, customize time windows, reorder display, preview resolved items, warm cache, and reset to defaults.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `database/migrations/2026_04_06_015552_create_smart_category_settings_table.php` | **NEW** — Creates `smart_category_settings` table with slug (unique), is_enabled, display_order, item_limit, visible_hour_start, visible_hour_end. Seeds 9 default rows from SmartCategory enum. | Runtime configuration for each smart category |
+| `app/Models/SmartCategorySetting.php` | **NEW** — Model with fillable, casts (bool/int), `smartCategory()` enum coercion, `hasCustomTimeWindow()` check | Data model for admin-configurable settings per smart category |
+| `app/Http/Resources/SmartCategorySettingResource.php` | **NEW** — Returns enriched payload: id, slug, name, icon (from enum), is_enabled, display_order, item_limit, is_time_based, requires_customer, visible/default hour windows, default_item_limit | Frontend needs both custom and default values for UI comparison |
+| `app/Http/Requests/UpdateSmartCategorySettingRequest.php` | **NEW** — Validates is_enabled (bool), item_limit (1–50), visible_hour_start/end (nullable, 0–23) | Form Request validation per Laravel conventions |
+| `app/Http/Controllers/Api/Admin/SmartCategorySettingController.php` | **NEW** — 6 actions: index, update, reorder, preview, warmCache, resetToDefault. Preview resolves live bypassing cache. WarmCache supports branch-specific or all-branches. | Admin CRUD + operational tools for smart categories |
+| `app/Services/SmartCategories/SmartCategoryService.php` | **MODIFIED** — Now loads SmartCategorySetting rows (memoized via `once()`). `getActiveForContext()` checks is_enabled + custom `isVisibleAtHour()`. `resolve()` accepts optional limit, falls back to setting's item_limit. `getResolver()` changed private→public. Added `isVisibleAtHour()` and `getSettingFor()` private methods. | Service must respect admin settings for enable/disable, custom limits, custom time windows |
+| `routes/admin.php` | Added 6 routes under `permission:manage_menu`: GET/PATCH smart-categories, POST reorder, GET preview, POST warm-cache, POST reset | Admin-only access to smart category configuration |
+| `tests/Feature/SmartCategorySettingTest.php` | **NEW** — 16 Pest tests (170 assertions): model tests, CRUD tests, reorder, reset, preview, warm-cache, service-respects-disabled | Comprehensive test coverage for all new functionality |
+
+### Decisions
+
+- **Decision**: Separate `smart_category_settings` table seeded from enum defaults, rather than adding columns to an existing table
+    - **Rationale**: Clean separation of concerns. Migration seeds defaults so the system works immediately. Settings can diverge from enum defaults at runtime.
+- **Decision**: `SmartCategoryService` uses `once()` memoization for settings loading
+    - **Rationale**: Avoid repeated DB queries within a single request when multiple categories are resolved. Laravel's `once()` is per-request.
+- **Decision**: Controller in `Api\Admin` namespace (not root `Api` namespace)
+    - **Rationale**: Follows existing admin controller convention. All admin CRUD controllers live under this namespace.
+- **Decision**: `getResolver()` changed from private to public on SmartCategoryService
+    - **Rationale**: Controller's preview action needs to call resolver directly to bypass cache for live preview.
+- **Decision**: Test setup deletes seeded rows in `beforeEach` to avoid unique constraint violations
+    - **Rationale**: Migration seeds 9 default rows. Tests creating new rows with same slugs would violate unique constraint. Deleting first ensures clean state.
+- **Decision**: Tests use `User` model (not `Employee`) for admin auth
+    - **Rationale**: Spatie HasRoles trait is on User model, not Employee. Admin API authentication uses User with roles/permissions.
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Triggered By |
+|------|--------|--------|
+| `types/api.ts` | Added `SmartCategorySetting` (14 fields) and `SmartCategoryPreview` interfaces | New API response contracts |
+| `lib/api/services/menu.service.ts` | Added 6 methods: getSmartCategorySettings, updateSmartCategorySetting, reorderSmartCategories, previewSmartCategory, warmSmartCategoryCache, resetSmartCategorySetting | Admin API integration |
+| `app/admin/menu/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation to new admin page |
+| `app/admin/menu-tags/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
+| `app/admin/menu/configure/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
+| `app/admin/menu-add-ons/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
+| `app/admin/menu/smart-categories/page.tsx` | **NEW** — Full admin UI with category cards (toggle, limit, time windows, reorder, preview, cache warm, reset) | Admin management page for smart categories |
+
+### Current State
+
+- **Models**: 30 (added SmartCategorySetting)
+- **Services**: SmartCategoryService now respects runtime settings (enable/disable, custom limits, custom time windows)
+- **Tests**: 38 SmartCategory tests pass (253 assertions, 6.67s) — 22 original + 16 new settings tests
+- **Admin routes**: 6 new endpoints under `v1/admin/smart-categories/` with `permission:manage_menu`
+- **Pint**: Clean
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- "Staff Picks" tag to replace the manual `popular` tag for curated picks
+- Potential future: collaborative filtering for "You Might Like"
+- Monitor smart category resolver performance at scale
+- Consider adding bulk enable/disable toggle for all smart categories
+- Consider drag-and-drop reorder (currently arrow-based) if UX feedback warrants it
+
+---
+
+## [2026-04-06] Session: Smart Categories System — Data-Driven Menu Discovery
+
+### Intent
+
+Replace hardcoded "CediBites Mix" and "Most Popular" categories on the customer-facing menu with a data-driven Smart Categories system. Categories like "Most Popular", "Trending", "Top Rated", "New Arrivals", time-based categories (Breakfast Favorites, Lunch Picks, Dinner Favorites, Late Night Bites), and personalized "Order Again" are now computed from actual order data, ratings, timestamps, and customer history.
+
+### Architecture
+
+- **Pattern**: Strategy pattern — `SmartCategory` enum maps to Resolver classes; `SmartCategoryService` orchestrates resolution + caching
+- **Caching**: Laravel Cache with 6-hour TTL; warmed by `menu:compute-smart-categories` artisan command scheduled `everySixHours()`
+- **Category ID Convention**: Smart categories use `smart:{slug}` prefix (e.g., `smart:most-popular`) on the frontend to distinguish from regular category names
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Enums/SmartCategory.php` | **NEW** — Backed PHP enum with 9 cases (MostPopular, Trending, TopRated, NewArrivals, BreakfastFavorites, LunchPicks, DinnerFavorites, LateNightBites, OrderAgain). Methods: `label()`, `icon()`, `requiresCustomer()`, `visibleHours()`, `isTimeBased()`, `isVisibleAtHour()`, `orderHours()`, `defaultLimit()`. Time windows: Breakfast 5–11, Lunch 11–15, Dinner 17–22, LateNight 21–3. | Defines all smart category types as a type-safe enum with metadata |
+| `app/Services/SmartCategories/SmartCategoryResolver.php` | **NEW** — Interface with `resolve(int $branchId, int $limit, ?int $customerId = null): Collection` | Contract for all resolver implementations |
+| `app/Services/SmartCategories/Resolvers/PopularResolver.php` | **NEW** — Queries order_items + orders (completed, paid) from last 30 days, ranks by SUM(quantity) | Resolves "Most Popular" items |
+| `app/Services/SmartCategories/Resolvers/TrendingResolver.php` | **NEW** — Compares order counts in last 7 days vs previous 7 days, ranks by velocity increase | Resolves "Trending Now" items |
+| `app/Services/SmartCategories/Resolvers/TopRatedResolver.php` | **NEW** — Filters menu_items with rating >= 4.0 AND rating_count >= 5 | Resolves "Top Rated" items |
+| `app/Services/SmartCategories/Resolvers/NewArrivalsResolver.php` | **NEW** — Items with created_at within last 14 days | Resolves "New Arrivals" items |
+| `app/Services/SmartCategories/Resolvers/TimeBasedResolver.php` | **NEW** — Accepts SmartCategory enum, uses `EXTRACT(HOUR FROM ...)` for PostgreSQL hour filtering. Handles overnight windows (e.g., 21→3). | Resolves Breakfast/Lunch/Dinner/Late Night categories |
+| `app/Services/SmartCategories/Resolvers/OrderAgainResolver.php` | **NEW** — Requires customerId, queries customer's past completed orders ranked by frequency | Resolves personalized "Order Again" items |
+| `app/Services/SmartCategories/SmartCategoryService.php` | **NEW** — Orchestrator service. Methods: `getActiveForContext()`, `resolve()`, `warmCacheForBranch()`, `invalidateBranch()`, `hydrateItems()`. Cache key: `smart_category:{slug}:branch:{id}`, TTL: 6 hours. | Central service coordinating all resolvers with caching |
+| `app/Console/Commands/ComputeSmartCategories.php` | **NEW** — Artisan command `menu:compute-smart-categories {--branch=}`. Warms cache for all active branches or a specific one. | Pre-computes smart categories on schedule |
+| `app/Http/Controllers/Api/SmartCategoryController.php` | **NEW** — `index(Request)` validates `branch_id`, calls SmartCategoryService, returns JSON | Public API endpoint for smart categories |
+| `routes/public.php` | Added `Route::get('smart-categories', ...)` and import | Public endpoint (no auth required) |
+| `routes/console.php` | Added `Schedule::command('menu:compute-smart-categories')->everySixHours()` | Automated cache warming |
+| `database/factories/OrderFactory.php` | Fixed `tax_rate`/`tax_amount` → `service_charge` | Factory had stale column names that don't exist in DB (renamed to service_charge previously) |
+| `tests/Feature/SmartCategoryTest.php` | **NEW** — 22 Pest tests (83 assertions): enum tests, all 6 resolver tests, service tests (active context, guest exclusion, caching, invalidation), API endpoint tests | Comprehensive test coverage |
+
+### Decisions
+
+- **Decision**: Strategy pattern over config table — resolvers are code-defined because each has unique query logic
+    - **Alternatives**: Database-driven config table for category definitions
+    - **Rationale**: No migration needed — just enum + services. Each resolver has unique query logic that doesn't fit a generic config model.
+- **Decision**: Cache layer instead of materialized views
+    - **Alternatives**: PostgreSQL materialized views
+    - **Rationale**: Laravel Cache with 6-hour TTL is simpler and sufficient; no DB schema changes required
+- **Decision**: `smart:` prefix convention on frontend to distinguish smart vs regular categories
+    - **Alternatives**: Separate data structures or boolean flag
+    - **Rationale**: String prefix is clean, simple, and requires no structural changes to category handling
+- **Decision**: PostgreSQL `EXTRACT(HOUR FROM ...)` instead of MySQL `HOUR()`
+    - **Rationale**: Required for PostgreSQL compatibility. Initially used MySQL syntax which failed in tests.
+- **Decision**: Route prefix `v1` not `api`
+    - **Rationale**: App uses `apiPrefix: 'v1'` in bootstrap/app.php. Tests initially used `/api/` prefix which caused 404s.
+- **Decision**: No migration needed — smart categories are computed at runtime and cached
+    - **Rationale**: Avoids schema changes; data is derived from existing order/menu tables
+- **Decision**: Fix OrderFactory `tax_rate`/`tax_amount` → `service_charge`
+    - **Rationale**: Factory had stale column names from a previous schema rename; discovered during test debugging
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Triggered By |
+|------|--------|--------|
+| `types/api.ts` | Added `SmartCategory` interface: `{ slug, name, icon, item_ids }` | New smart categories API response contract |
+| `lib/api/services/menu.service.ts` | Added `getSmartCategories(branchId)` | API integration for smart categories |
+| `lib/api/hooks/useSmartCategories.ts` | **NEW** — TanStack Query hook with 10-minute staleTime | React Query hook for data fetching |
+| `app/components/providers/MenuDiscoveryProvider.tsx` | Integrated smart categories, replaced hardcoded "Most Popular" logic | Dynamic smart category integration |
+| `app/components/ui/MenuGrid.tsx` | Replaced hardcoded "Most Popular" section with generic smart category section | Dynamic rendering of active smart category |
+| `app/(customer)/menu/page.tsx` | Categories now objects `{id, label}` with smart category support | Mixed category types (smart + regular) |
+
+### Current State
+
+- **Tests**: 22 Pest tests pass (83 assertions, 6.79s)
+- **Formatting**: Pint passes clean
+- **API endpoint**: `GET /v1/smart-categories?branch_id={id}` — public, no auth required
+- **Scheduled task**: `menu:compute-smart-categories` runs every 6 hours
+- **Smart categories**: MostPopular, Trending, TopRated, NewArrivals, BreakfastFavorites, LunchPicks, DinnerFavorites, LateNightBites, OrderAgain
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Admin settings UI for toggling/configuring smart categories (enable/disable individual categories, adjust limits)
+- "Staff Picks" tag to replace the manual `popular` tag for curated picks
+- Potential future: collaborative filtering for "You Might Like"
+- Consider adding smart category configuration to the admin menu management page
+- Monitor smart category resolver performance at scale — may need query optimization or index additions
 
 ---
 
