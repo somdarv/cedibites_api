@@ -27,5 +27,11 @@ jobs:
             php artisan view:clear
             php artisan event:clear
             sudo systemctl reload php8.4-fpm
-            echo "--- Deploy verification ---"
-            php artisan route:list --path=pos/checkout-sessions --json 2>&1 | head -c 200
+            echo "=== Diagnostics ==="
+            echo "PWD: $(pwd)"
+            echo "Git HEAD: $(git log --oneline -1)"
+            echo "Route check:"
+            php artisan route:list --path=pos/checkout-sessions --json 2>&1 | head -c 300
+            echo ""
+            echo "Nginx api.cedibites.com root:"
+            grep -A2 'server_name.*api\.cedibites\.com' /etc/nginx/sites-enabled/* 2>/dev/null | head -10
