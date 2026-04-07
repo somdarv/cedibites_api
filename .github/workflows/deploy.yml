@@ -16,6 +16,14 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            echo "=== Nginx root for api.cedibites.com ==="
+            grep -r 'server_name.*api\.cedibites\.com' /etc/nginx/sites-enabled/ -A5 2>/dev/null || echo "Not found in sites-enabled"
+            grep -r 'server_name.*api\.cedibites\.com' /etc/nginx/conf.d/ -A5 2>/dev/null || echo "Not found in conf.d"
+            echo ""
+            echo "=== All nginx roots ==="
+            grep -r 'root.*cedibites' /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null || echo "No cedibites roots found"
+            echo ""
+            echo "=== Deploying ==="
             cd /var/www/production/laravel/cedibites_api
             git pull origin master
             composer install --no-dev --optimize-autoloader
@@ -25,13 +33,8 @@ jobs:
             php artisan route:clear
             rm -f bootstrap/cache/routes-v7.php
             php artisan view:clear
-            php artisan event:clear
             sudo systemctl reload php8.4-fpm
-            echo "=== Diagnostics ==="
-            echo "PWD: $(pwd)"
-            echo "Git HEAD: $(git log --oneline -1)"
-            echo "Route check:"
-            php artisan route:list --path=pos/checkout-sessions --json 2>&1 | head -c 300
-            echo ""
-            echo "Nginx api.cedibites.com root:"
-            grep -A2 'server_name.*api\.cedibites\.com' /etc/nginx/sites-enabled/* 2>/dev/null | head -10
+            echo "=== Production git HEAD ==="
+            git log --oneline -1
+            echo "=== Route check ==="
+            php artisan route:list --path=_debug --json 2>&1 | head -c 200
