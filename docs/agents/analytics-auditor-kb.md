@@ -9,17 +9,17 @@
 
 > ✅ **DEVELOPER CONFIRMED** — All definitions locked in on April 7, 2026.
 
-| Metric | Canonical Definition | Source of Truth |
-|---|---|---|
-| **Placed Order** | Has payment with `payment_status IN ['completed', 'no_charge']` (`paymentConfirmed()` scope) | `AnalyticsQueryBuilder::placedOrders()` |
-| **Revenue** | `SUM(orders.total_amount)` WHERE placed + `status != 'cancelled'` + `payment_status = 'completed'` (excludes no_charge) | `AnalyticsQueryBuilder::computeRevenue()` |
-| **Revenue-Contributing Order Count** | COUNT of placed orders WHERE `status != 'cancelled'` + `payment_status = 'completed'` | `AnalyticsQueryBuilder::computeRevenueOrderCount()` |
-| **No-Charge Order** | Placed, `payment_status = 'no_charge'`, counted in orders but NOT in revenue. Tracked separately with own amount. | `AnalyticsQueryBuilder::noChargeOrders()` |
-| **AOV** | `revenue / revenue_contributing_order_count` (excludes no_charge and cancelled from denominator) | `AnalyticsService::getSalesMetrics()` |
-| **Active Order** | Status IN `['received', 'accepted', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery']` | `AnalyticsQueryBuilder::ACTIVE_STATUSES` |
-| **Completed Order** | Status IN `['completed', 'delivered']` | `AnalyticsQueryBuilder::COMPLETED_STATUSES` |
-| **Cancelled Order** | `status = 'cancelled'`. Auto-refund fires: if `payment_status = 'completed'` → flipped to `'refunded'`. No_charge left as-is. | `OrderObserver::handleCancellationSideEffects()` |
-| **Cancel = Auto-Refund** | When cancelled: completed→refunded, no_charge→unchanged. Shift counters decremented. | `OrderObserver::handleCancellationSideEffects()` |
+| Metric                               | Canonical Definition                                                                                                          | Source of Truth                                     |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Placed Order**                     | Has payment with `payment_status IN ['completed', 'no_charge']` (`paymentConfirmed()` scope)                                  | `AnalyticsQueryBuilder::placedOrders()`             |
+| **Revenue**                          | `SUM(orders.total_amount)` WHERE placed + `status != 'cancelled'` + `payment_status = 'completed'` (excludes no_charge)       | `AnalyticsQueryBuilder::computeRevenue()`           |
+| **Revenue-Contributing Order Count** | COUNT of placed orders WHERE `status != 'cancelled'` + `payment_status = 'completed'`                                         | `AnalyticsQueryBuilder::computeRevenueOrderCount()` |
+| **No-Charge Order**                  | Placed, `payment_status = 'no_charge'`, counted in orders but NOT in revenue. Tracked separately with own amount.             | `AnalyticsQueryBuilder::noChargeOrders()`           |
+| **AOV**                              | `revenue / revenue_contributing_order_count` (excludes no_charge and cancelled from denominator)                              | `AnalyticsService::getSalesMetrics()`               |
+| **Active Order**                     | Status IN `['received', 'accepted', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery']`                            | `AnalyticsQueryBuilder::ACTIVE_STATUSES`            |
+| **Completed Order**                  | Status IN `['completed', 'delivered']`                                                                                        | `AnalyticsQueryBuilder::COMPLETED_STATUSES`         |
+| **Cancelled Order**                  | `status = 'cancelled'`. Auto-refund fires: if `payment_status = 'completed'` → flipped to `'refunded'`. No_charge left as-is. | `OrderObserver::handleCancellationSideEffects()`    |
+| **Cancel = Auto-Refund**             | When cancelled: completed→refunded, no_charge→unchanged. Shift counters decremented.                                          | `OrderObserver::handleCancellationSideEffects()`    |
 
 ---
 
@@ -41,20 +41,20 @@ Frontend (all portals tap same pipe with different filters)
 
 The canonical query factory. Every analytics computation MUST use these builders.
 
-| Method | Returns | Filters Applied |
-|---|---|---|
-| `placedOrders($filters)` | Builder: paymentConfirmed + status != cancelled | date, branch, employee |
-| `revenueOrders($filters)` | Builder: placed + payment_status = completed | date, branch, employee |
-| `noChargeOrders($filters)` | Builder: placed + payment_status = no_charge | date, branch, employee |
-| `cancelledOrders($filters)` | Builder: paymentConfirmed + status = cancelled | date, branch, employee |
-| `activeOrders($filters)` | Builder: paymentConfirmed + ACTIVE_STATUSES | date, branch |
-| `completedOrders($filters)` | Builder: paymentConfirmed + COMPLETED_STATUSES | date, branch, employee |
-| `orderItems($filters)` | Builder: order_items joined with placed orders | date, branch |
-| `payments($filters)` | Builder: payments joined with placed orders | date, branch |
-| `computeRevenue($filters)` | float: SUM(total_amount) from revenueOrders | date, branch, employee |
-| `computePlacedOrderCount($filters)` | int: COUNT from placedOrders | date, branch, employee |
-| `computeRevenueOrderCount($filters)` | int: COUNT from revenueOrders | date, branch, employee |
-| `applyFilters($query, $filters)` | void: applies date_from, date_to, branch_id, branch_ids, employee_id | — |
+| Method                               | Returns                                                              | Filters Applied        |
+| ------------------------------------ | -------------------------------------------------------------------- | ---------------------- |
+| `placedOrders($filters)`             | Builder: paymentConfirmed + status != cancelled                      | date, branch, employee |
+| `revenueOrders($filters)`            | Builder: placed + payment_status = completed                         | date, branch, employee |
+| `noChargeOrders($filters)`           | Builder: placed + payment_status = no_charge                         | date, branch, employee |
+| `cancelledOrders($filters)`          | Builder: paymentConfirmed + status = cancelled                       | date, branch, employee |
+| `activeOrders($filters)`             | Builder: paymentConfirmed + ACTIVE_STATUSES                          | date, branch           |
+| `completedOrders($filters)`          | Builder: paymentConfirmed + COMPLETED_STATUSES                       | date, branch, employee |
+| `orderItems($filters)`               | Builder: order_items joined with placed orders                       | date, branch           |
+| `payments($filters)`                 | Builder: payments joined with placed orders                          | date, branch           |
+| `computeRevenue($filters)`           | float: SUM(total_amount) from revenueOrders                          | date, branch, employee |
+| `computePlacedOrderCount($filters)`  | int: COUNT from placedOrders                                         | date, branch, employee |
+| `computeRevenueOrderCount($filters)` | int: COUNT from revenueOrders                                        | date, branch, employee |
+| `applyFilters($query, $filters)`     | void: applies date_from, date_to, branch_id, branch_ids, employee_id | —                      |
 
 Constants: `ACTIVE_STATUSES`, `COMPLETED_STATUSES`
 
@@ -62,42 +62,42 @@ Constants: `ACTIVE_STATUSES`, `COMPLETED_STATUSES`
 
 The single source of truth. 19 public methods organized into sections A–S.
 
-| Method | Section | Used By |
-|---|---|---|
-| `getSalesMetrics($filters)` | A | AdminAnalyticsController, Manager/Partner Analytics |
-| `getOrderMetrics($filters)` | B | AdminAnalyticsController |
-| `getCustomerMetrics($filters)` | C | AdminAnalyticsController |
-| `getTopItemsMetrics($filters)` | D | AdminAnalyticsController, BranchController |
-| `getBottomItemsMetrics($filters)` | E | AdminAnalyticsController |
-| `getCategoryRevenueMetrics($filters)` | F | AdminAnalyticsController |
-| `getBranchMetrics($filters)` | G | AdminAnalyticsController |
-| `getStaffSalesMetrics($filters)` | H | BranchController::staffSales |
-| `getDeliveryPickupMetrics($filters)` | I | AdminAnalyticsController |
-| `getPaymentMethodMetrics($filters)` | J | AdminAnalyticsController |
-| `getSourceMetrics($filters)` | — | AdminAnalyticsController |
-| `getPaymentStats($filters)` | K | PaymentController::stats |
-| `getFulfillmentMetrics($filters)` | L | AdminAnalyticsController::fulfillment (NEW) |
-| `getPromoMetrics($filters)` | M | AdminAnalyticsController::promos (NEW) |
-| `getFunnelMetrics($filters)` | N | AdminAnalyticsController::checkoutFunnel (NEW) |
-| `getDashboardMetrics($filters)` | O | AdminDashboardController |
-| `getBranchTodayStats($branchId)` | P | AdminDashboardController, BranchController::index |
-| `getDailyReport($date)` | Q | AdminReportController::daily |
-| `getMonthlyReport($year, $month)` | R | AdminReportController::monthly |
-| `getBranchDetailStats($branchId)` | S | BranchController::stats |
-| `getBranchTopItems($branchId, $period, $limit)` | S | BranchController::topItems |
-| `getBranchRevenueChart($branchId, $period)` | S | BranchController::revenueChart |
-| `getEmployeeBranchStats($branchIds)` | S | OrderManagementService::getBranchStats |
+| Method                                          | Section | Used By                                             |
+| ----------------------------------------------- | ------- | --------------------------------------------------- |
+| `getSalesMetrics($filters)`                     | A       | AdminAnalyticsController, Manager/Partner Analytics |
+| `getOrderMetrics($filters)`                     | B       | AdminAnalyticsController                            |
+| `getCustomerMetrics($filters)`                  | C       | AdminAnalyticsController                            |
+| `getTopItemsMetrics($filters)`                  | D       | AdminAnalyticsController, BranchController          |
+| `getBottomItemsMetrics($filters)`               | E       | AdminAnalyticsController                            |
+| `getCategoryRevenueMetrics($filters)`           | F       | AdminAnalyticsController                            |
+| `getBranchMetrics($filters)`                    | G       | AdminAnalyticsController                            |
+| `getStaffSalesMetrics($filters)`                | H       | BranchController::staffSales                        |
+| `getDeliveryPickupMetrics($filters)`            | I       | AdminAnalyticsController                            |
+| `getPaymentMethodMetrics($filters)`             | J       | AdminAnalyticsController                            |
+| `getSourceMetrics($filters)`                    | —       | AdminAnalyticsController                            |
+| `getPaymentStats($filters)`                     | K       | PaymentController::stats                            |
+| `getFulfillmentMetrics($filters)`               | L       | AdminAnalyticsController::fulfillment (NEW)         |
+| `getPromoMetrics($filters)`                     | M       | AdminAnalyticsController::promos (NEW)              |
+| `getFunnelMetrics($filters)`                    | N       | AdminAnalyticsController::checkoutFunnel (NEW)      |
+| `getDashboardMetrics($filters)`                 | O       | AdminDashboardController                            |
+| `getBranchTodayStats($branchId)`                | P       | AdminDashboardController, BranchController::index   |
+| `getDailyReport($date)`                         | Q       | AdminReportController::daily                        |
+| `getMonthlyReport($year, $month)`               | R       | AdminReportController::monthly                      |
+| `getBranchDetailStats($branchId)`               | S       | BranchController::stats                             |
+| `getBranchTopItems($branchId, $period, $limit)` | S       | BranchController::topItems                          |
+| `getBranchRevenueChart($branchId, $period)`     | S       | BranchController::revenueChart                      |
+| `getEmployeeBranchStats($branchIds)`            | S       | OrderManagementService::getBranchStats              |
 
 ### 2.3 Controllers (All Thin Wrappers Now)
 
-| Controller | Inline Analytics? | Delegates To |
-|---|---|---|
-| AdminDashboardController | ❌ None | `AnalyticsService::getDashboardMetrics()`, `getBranchTodayStats()` |
-| AdminAnalyticsController | ❌ None | 13 AnalyticsService methods (10 existing + 3 new) |
-| AdminReportController | ❌ None | `AnalyticsService::getDailyReport()`, `getMonthlyReport()` |
-| BranchController | ❌ None | `AnalyticsService::getBranchTodayStats/DetailStats/TopItems/RevenueChart/StaffSales` |
-| PaymentController | ❌ None | `AnalyticsService::getPaymentStats()` |
-| OrderManagementService | ❌ None | `AnalyticsService::getEmployeeBranchStats()` |
+| Controller               | Inline Analytics? | Delegates To                                                                         |
+| ------------------------ | ----------------- | ------------------------------------------------------------------------------------ |
+| AdminDashboardController | ❌ None           | `AnalyticsService::getDashboardMetrics()`, `getBranchTodayStats()`                   |
+| AdminAnalyticsController | ❌ None           | 13 AnalyticsService methods (10 existing + 3 new)                                    |
+| AdminReportController    | ❌ None           | `AnalyticsService::getDailyReport()`, `getMonthlyReport()`                           |
+| BranchController         | ❌ None           | `AnalyticsService::getBranchTodayStats/DetailStats/TopItems/RevenueChart/StaffSales` |
+| PaymentController        | ❌ None           | `AnalyticsService::getPaymentStats()`                                                |
+| OrderManagementService   | ❌ None           | `AnalyticsService::getEmployeeBranchStats()`                                         |
 
 ---
 
@@ -197,25 +197,25 @@ _None — all 12 original divergences resolved in the April 7 overhaul._
 
 ### §4.2 — Resolved Divergences
 
-| # | Was | Resolution | Date |
-|---|---|---|---|
-| D1 | 🔴 CRITICAL: `BranchController::index()` wrong revenue (no payment filter) | Replaced with `AnalyticsService::getBranchTodayStats()` using canonical `computeRevenue()` | April 7, 2026 |
-| D2 | 🔴 CRITICAL: Shift counters never decremented on cancel | Added `OrderObserver::handleCancellationSideEffects()` — decrements shift counters + deletes ShiftOrder | April 7, 2026 |
-| D3 | 🟠 HIGH: AdminDashboardController inline computation | Replaced with `AnalyticsService::getDashboardMetrics()` + `getBranchTodayStats()` | April 7, 2026 |
-| D4 | 🟠 HIGH: revenueChart includes no_charge in revenue | Replaced with `AnalyticsService::getBranchRevenueChart()` using `computeRevenue()` (excludes no_charge) | April 7, 2026 |
-| D5 | 🟠 HIGH: staffSales missing paymentConfirmed scope | Replaced with `AnalyticsService::getStaffSalesMetrics()` using `revenueOrders()` + `noChargeOrders()` | April 7, 2026 |
-| D6 | 🟡 MEDIUM: topItems in-memory PHP aggregation | Replaced with `AnalyticsService::getBranchTopItems()` using DB-level aggregation via `orderItems()` | April 7, 2026 |
-| D7 | 🟡 MEDIUM: Branch performance no payment filter | Fixed in new `AnalyticsService::getBranchMetrics()` using canonical builders | April 7, 2026 |
-| D8 | 🟡 MEDIUM: Daily/Monthly reports no paymentConfirmed | Fixed in new `AnalyticsService::getDailyReport()` / `getMonthlyReport()` | April 7, 2026 |
-| D9 | 🟡 MEDIUM: Customer spending no payment filter | Fixed in new `AnalyticsService::getCustomerMetrics()` | April 7, 2026 |
-| D10 | 🟡 MEDIUM: Order analytics counts all orders (no paymentConfirmed) | Fixed in new `AnalyticsService::getOrderMetrics()` using `placedOrders()` | April 7, 2026 |
-| D11 | 🟢 LOW: Different active status sets (preparing_orders vs active_orders) | Fixed — both now use `AnalyticsQueryBuilder::ACTIVE_STATUSES` with `accepted` instead of `confirmed` | April 7, 2026 |
-| D12 | 🟢 LOW: Item/category includes no_charge unlike sales revenue | By design — item analytics show all placed items. Revenue analytics excludes no_charge. Accepted. | April 7, 2026 |
+| #   | Was                                                                        | Resolution                                                                                              | Date          |
+| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------- |
+| D1  | 🔴 CRITICAL: `BranchController::index()` wrong revenue (no payment filter) | Replaced with `AnalyticsService::getBranchTodayStats()` using canonical `computeRevenue()`              | April 7, 2026 |
+| D2  | 🔴 CRITICAL: Shift counters never decremented on cancel                    | Added `OrderObserver::handleCancellationSideEffects()` — decrements shift counters + deletes ShiftOrder | April 7, 2026 |
+| D3  | 🟠 HIGH: AdminDashboardController inline computation                       | Replaced with `AnalyticsService::getDashboardMetrics()` + `getBranchTodayStats()`                       | April 7, 2026 |
+| D4  | 🟠 HIGH: revenueChart includes no_charge in revenue                        | Replaced with `AnalyticsService::getBranchRevenueChart()` using `computeRevenue()` (excludes no_charge) | April 7, 2026 |
+| D5  | 🟠 HIGH: staffSales missing paymentConfirmed scope                         | Replaced with `AnalyticsService::getStaffSalesMetrics()` using `revenueOrders()` + `noChargeOrders()`   | April 7, 2026 |
+| D6  | 🟡 MEDIUM: topItems in-memory PHP aggregation                              | Replaced with `AnalyticsService::getBranchTopItems()` using DB-level aggregation via `orderItems()`     | April 7, 2026 |
+| D7  | 🟡 MEDIUM: Branch performance no payment filter                            | Fixed in new `AnalyticsService::getBranchMetrics()` using canonical builders                            | April 7, 2026 |
+| D8  | 🟡 MEDIUM: Daily/Monthly reports no paymentConfirmed                       | Fixed in new `AnalyticsService::getDailyReport()` / `getMonthlyReport()`                                | April 7, 2026 |
+| D9  | 🟡 MEDIUM: Customer spending no payment filter                             | Fixed in new `AnalyticsService::getCustomerMetrics()`                                                   | April 7, 2026 |
+| D10 | 🟡 MEDIUM: Order analytics counts all orders (no paymentConfirmed)         | Fixed in new `AnalyticsService::getOrderMetrics()` using `placedOrders()`                               | April 7, 2026 |
+| D11 | 🟢 LOW: Different active status sets (preparing_orders vs active_orders)   | Fixed — both now use `AnalyticsQueryBuilder::ACTIVE_STATUSES` with `accepted` instead of `confirmed`    | April 7, 2026 |
+| D12 | 🟢 LOW: Item/category includes no_charge unlike sales revenue              | By design — item analytics show all placed items. Revenue analytics excludes no_charge. Accepted.       | April 7, 2026 |
 
 ### §4.3 — Accepted Risks
 
-| Risk | Reason |
-|---|---|
+| Risk                                                 | Reason                                                                                             |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | D12: Item/category analytics include no_charge items | Developer confirmed: item popularity should count all placed orders. Revenue is a separate metric. |
 
 ---
@@ -224,10 +224,10 @@ _None — all 12 original divergences resolved in the April 7 overhaul._
 
 ### Shift Counters
 
-| Counter | Model | Update Mechanism | Decrement on Cancel? | Reconciliation |
-|---|---|---|---|---|
+| Counter       | Model | Update Mechanism                               | Decrement on Cancel?                                      | Reconciliation |
+| ------------- | ----- | ---------------------------------------------- | --------------------------------------------------------- | -------------- |
 | `total_sales` | Shift | `increment()` in `ShiftController::addOrder()` | ✅ YES — `OrderObserver::handleCancellationSideEffects()` | Auto on cancel |
-| `order_count` | Shift | `increment()` in `ShiftController::addOrder()` | ✅ YES — same observer | Auto on cancel |
+| `order_count` | Shift | `increment()` in `ShiftController::addOrder()` | ✅ YES — same observer                                    | Auto on cancel |
 
 **Status**: Fixed. When an order is cancelled, `OrderObserver` finds all ShiftOrders for that order, decrements the parent Shift's counters, and deletes the ShiftOrder records.
 
@@ -248,16 +248,16 @@ _None — all 12 original divergences resolved in the April 7 overhaul._
 
 ## §7 — Decision Log
 
-| Date | Decision | Reasoning | Status |
-|---|---|---|---|
-| 2026-04-07 | Initial audit completed | Full audit of all 8+ computation locations. 12 divergences identified. | Superseded by overhaul |
-| 2026-04-07 | Revenue = placed + not cancelled + payment_status=completed | Developer confirmed. No_charge tracked separately. | ✅ Locked |
-| 2026-04-07 | AOV = revenue / revenue-contributing orders only | Excludes no_charge and cancelled from denominator. Developer confirmed. | ✅ Locked |
-| 2026-04-07 | Cancel = auto-refund | Completed→refunded, no_charge→unchanged. Shift counters decremented. | ✅ Locked |
-| 2026-04-07 | `confirmed` status doesn't exist, use `accepted` | Developer confirmed. AnalyticsQueryBuilder::ACTIVE_STATUSES uses 'accepted'. | ✅ Locked |
-| 2026-04-07 | One Source One Pipeline architecture | AnalyticsQueryBuilder→AnalyticsService→Controllers. All inline analytics eliminated. | ✅ Deployed |
-| 2026-04-07 | Old AnalyticsService deleted | All references migrated to `App\Services\Analytics\AnalyticsService`. Old file removed. | ✅ Done |
-| 2026-04-07 | 3 new analytics endpoints added | fulfillment, promos, checkout-funnel. Routes registered in admin.php. | ✅ Done |
+| Date       | Decision                                                    | Reasoning                                                                               | Status                 |
+| ---------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------- |
+| 2026-04-07 | Initial audit completed                                     | Full audit of all 8+ computation locations. 12 divergences identified.                  | Superseded by overhaul |
+| 2026-04-07 | Revenue = placed + not cancelled + payment_status=completed | Developer confirmed. No_charge tracked separately.                                      | ✅ Locked              |
+| 2026-04-07 | AOV = revenue / revenue-contributing orders only            | Excludes no_charge and cancelled from denominator. Developer confirmed.                 | ✅ Locked              |
+| 2026-04-07 | Cancel = auto-refund                                        | Completed→refunded, no_charge→unchanged. Shift counters decremented.                    | ✅ Locked              |
+| 2026-04-07 | `confirmed` status doesn't exist, use `accepted`            | Developer confirmed. AnalyticsQueryBuilder::ACTIVE_STATUSES uses 'accepted'.            | ✅ Locked              |
+| 2026-04-07 | One Source One Pipeline architecture                        | AnalyticsQueryBuilder→AnalyticsService→Controllers. All inline analytics eliminated.    | ✅ Deployed            |
+| 2026-04-07 | Old AnalyticsService deleted                                | All references migrated to `App\Services\Analytics\AnalyticsService`. Old file removed. | ✅ Done                |
+| 2026-04-07 | 3 new analytics endpoints added                             | fulfillment, promos, checkout-funnel. Routes registered in admin.php.                   | ✅ Done                |
 
 ---
 
@@ -273,7 +273,7 @@ _None — all 12 original divergences resolved in the April 7 overhaul._
 
 ## §9 — Changelog
 
-| Date | Change | Author |
-|---|---|---|
+| Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Author            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | 2026-04-07 | **OVERHAUL COMPLETE**: Created AnalyticsQueryBuilder + new AnalyticsService. Rewrote AdminDashboardController, AdminAnalyticsController, BranchController (5 methods), PaymentController::stats, OrderManagementService::getBranchStats, AdminReportController. Added auto-refund + shift counter fix in OrderObserver. Added 3 new routes (fulfillment, promos, checkout-funnel). Deleted old AnalyticsService. All 12 divergences resolved. Tests pass (74/74, 1 pre-existing IAM failure). | Analytics Auditor |
-| 2026-04-07 | Created KB. Full initial audit: 12 divergences found, 16 untapped data sources identified, 0 caching, shift counter drift confirmed. | Analytics Auditor |
+| 2026-04-07 | Created KB. Full initial audit: 12 divergences found, 16 untapped data sources identified, 0 caching, shift counter drift confirmed.                                                                                                                                                                                                                                                                                                                                                          | Analytics Auditor |
