@@ -45,8 +45,10 @@ class User extends Authenticatable
         'email',
         'phone',
         'password',
+        'recoverable_password',
         'must_reset_password',
         'password_reset_required_at',
+        'platform_passcode',
     ];
 
     /**
@@ -56,7 +58,9 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
+        'recoverable_password',
         'remember_token',
+        'platform_passcode',
     ];
 
     /**
@@ -69,6 +73,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'recoverable_password' => 'encrypted',
+            'platform_passcode' => 'hashed',
             'must_reset_password' => 'boolean',
             'password_reset_required_at' => 'datetime',
         ];

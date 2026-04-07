@@ -31,6 +31,8 @@ class CheckoutSession extends Model
         'service_charge',
         'delivery_fee',
         'discount',
+        'promo_id',
+        'promo_name',
         'total_amount',
         'staff_id',
         'cart_id',
@@ -66,7 +68,7 @@ class CheckoutSession extends Model
         ];
     }
 
-    // ── Relationships ────────────────────────
+    // -- Relationships ---------------------
 
     public function branch(): BelongsTo
     {
@@ -88,7 +90,7 @@ class CheckoutSession extends Model
         return $this->belongsTo(Order::class);
     }
 
-    // ── Scopes ───────────────────────────────
+    // -- Scopes ----------------------------
 
     public function scopePending(Builder $query): void
     {
@@ -117,7 +119,7 @@ class CheckoutSession extends Model
             ->where('expires_at', '>', now());
     }
 
-    // ── Helpers ──────────────────────────────
+    // -- Helpers ---------------------------
 
     public function isExpired(): bool
     {

@@ -49,7 +49,7 @@ class RoleController extends Controller
     private function formatRoleDisplayName(string $roleName): string
     {
         $displayNames = [
-            'super_admin' => 'Super Admin',
+            'tech_admin' => 'Tech Admin',
             'admin' => 'Admin',
             'branch_partner' => 'Branch Partner',
             'manager' => 'Branch Manager',

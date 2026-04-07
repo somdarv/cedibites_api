@@ -172,6 +172,7 @@ class MenuSeeder extends Seeder
             unset($itemData['sizes'], $itemData['is_popular']);
 
             $slug = Str::slug($itemData['name']);
+            $displayNameMap = self::displayNames()[$slug] ?? [];
 
             $expectedOptionKeys = [];
             foreach ($sizes as $sizeData) {
@@ -196,6 +197,7 @@ class MenuSeeder extends Seeder
                     ['menu_item_id' => $item->id, 'option_key' => $key],
                     [
                         'option_label' => $sizeData['name'],
+                        'display_name' => $displayNameMap[$key] ?? null,
                         'price' => $sizeData['price'],
                         'display_order' => $index,
                         'is_available' => true,
@@ -211,5 +213,67 @@ class MenuSeeder extends Seeder
                     ->update(['is_available' => false]);
             }
         }
+    }
+
+    /** @return array<string, array<string, string>> item slug → option key → display name */
+    private static function displayNames(): array
+    {
+        return [
+            'jollof' => [
+                'plain' => 'Plain Jollof',
+                'assorted' => 'Assorted Jollof',
+                'seafood' => 'Seafood Jollof',
+            ],
+            'fried-rice' => [
+                'plain' => 'Plain Fried Rice',
+                'assorted' => 'Assorted Fried Rice',
+                'seafood' => 'Seafood Fried Rice',
+            ],
+            'noodles' => [
+                'assorted' => 'Assorted Noodles',
+                'seafood' => 'Seafood Noodles',
+            ],
+            'banku' => [
+                'grilled-tilapia' => 'Banku with Grilled Tilapia',
+            ],
+            'drumsticks' => [
+                'special-crunch-5-pieces' => 'Special Crunch Drumsticks (5 pcs)',
+                'special-crunch-10-pieces' => 'Special Crunch Drumsticks (10 pcs)',
+                'juicy-fried-5-pieces' => 'Juicy Fried Drumsticks (5 pcs)',
+                'juicy-fried-10-pieces' => 'Juicy Fried Drumsticks (10 pcs)',
+            ],
+            'rotisserie-grilled' => [
+                'full' => 'Full Rotisserie Grilled Chicken',
+                'half-cut' => 'Half Cut Rotisserie Grilled Chicken',
+            ],
+            'fried-rice-jollof-3-drums' => [
+                'fried-rice' => 'Fried Rice + 3 Drumsticks',
+                'jollof' => 'Jollof + 3 Drumsticks',
+            ],
+            'assorted-fried-rice-jollof-noodles-3-drums' => [
+                'fried-rice' => 'Assorted Fried Rice + 3 Drumsticks',
+                'jollof' => 'Assorted Jollof + 3 Drumsticks',
+                'noodles' => 'Assorted Noodles + 3 Drumsticks',
+            ],
+            'fried-rice-jollof-7-drums-kk' => [
+                'fried-rice' => 'Fried Rice + 7 Drumsticks + Kɔkɔɔ',
+                'jollof' => 'Jollof + 7 Drumsticks + Kɔkɔɔ',
+            ],
+            'assorted-fried-rice-jollof-noodles-7-drums-kk' => [
+                'fried-rice' => 'Assorted Fried Rice + 7 Drumsticks + Kɔkɔɔ',
+                'jollof' => 'Assorted Jollof + 7 Drumsticks + Kɔkɔɔ',
+                'noodles' => 'Assorted Noodles + 7 Drumsticks + Kɔkɔɔ',
+            ],
+            'assorted-fried-rice-jollof-noodles-full-chicken-kk' => [
+                'fried-rice' => 'Assorted Fried Rice + Full Chicken + Kɔkɔɔ',
+                'jollof' => 'Assorted Jollof + Full Chicken + Kɔkɔɔ',
+                'noodles' => 'Assorted Noodles + Full Chicken + Kɔkɔɔ',
+            ],
+            'cedi-wraps' => [
+                'chicken' => 'Chicken Cedi Wrap',
+                'beef' => 'Beef Cedi Wrap',
+                'mix' => 'Mix Cedi Wrap',
+            ],
+        ];
     }
 }

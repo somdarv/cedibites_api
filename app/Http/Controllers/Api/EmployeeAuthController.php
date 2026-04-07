@@ -116,6 +116,7 @@ class EmployeeAuthController extends Controller
 
         $user->update([
             'password' => Hash::make($request->password),
+            'recoverable_password' => $request->password,
             'must_reset_password' => false,
             'password_reset_required_at' => null,
         ]);
@@ -202,6 +203,7 @@ class EmployeeAuthController extends Controller
 
         $user->update([
             'password' => Hash::make($request->string('password')),
+            'recoverable_password' => $request->string('password')->toString(),
             'must_reset_password' => false,
             'password_reset_required_at' => null,
         ]);

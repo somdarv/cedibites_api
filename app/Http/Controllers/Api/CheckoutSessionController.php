@@ -13,6 +13,7 @@ use App\Models\MenuItem;
 use App\Models\MenuItemOption;
 use App\Services\HubtelPaymentService;
 use App\Services\OrderCreationService;
+use App\Services\PromoResolutionService;
 use App\Services\SystemSettingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -150,6 +151,12 @@ class CheckoutSessionController extends Controller
             ];
         }
 
+        // Resolve best applicable promo for this cart
+        $promoService = app(PromoResolutionService::class);
+        $itemIds = array_column($itemSnapshots, 'menu_item_id');
+        $resolvedPromo = $promoService->resolve($itemIds, (string) $validated['branch_id'], $subtotal);
+        $discount = $resolvedPromo ? $promoService->calculateDiscount($resolvedPromo, $subtotal) : 0;
+
         // Calculate totals — service charge on customer orders (percentage with cap)
         $serviceChargeEnabled = $this->settingService->getBoolean('service_charge_enabled', true);
         $serviceCharge = 0;
@@ -162,7 +169,7 @@ class CheckoutSessionController extends Controller
             }
         }
         $deliveryFee = 0; // Delivery fees temporarily disabled
-        $totalAmount = $subtotal + $serviceCharge + $deliveryFee;
+        $totalAmount = $subtotal - $discount + $serviceCharge + $deliveryFee;
 
         $sessionToken = Str::uuid()->toString();
 
@@ -184,7 +191,9 @@ class CheckoutSessionController extends Controller
             'subtotal' => $subtotal,
             'service_charge' => $serviceCharge,
             'delivery_fee' => $deliveryFee,
-            'discount' => 0,
+            'discount' => $discount,
+            'promo_id' => $resolvedPromo?->id,
+            'promo_name' => $resolvedPromo?->name,
             'total_amount' => $totalAmount,
             'cart_id' => $cart->id,
             'customer_id' => $identity['customer_id'],
@@ -390,6 +399,15 @@ class CheckoutSessionController extends Controller
         }
 
         $discount = (float) ($validated['discount'] ?? 0);
+
+        // Server-side promo validation: resolve the best promo and cap discount
+        $promoService = app(PromoResolutionService::class);
+        $itemIdsForPromo = array_column($itemSnapshots, 'menu_item_id');
+        $resolvedPromo = $promoService->resolve($itemIdsForPromo, (string) $branchId, $subtotal);
+        $maxAllowedDiscount = $resolvedPromo ? $promoService->calculateDiscount($resolvedPromo, $subtotal) : 0;
+        // Cap the POS discount to the resolved promo discount (prevent arbitrary amounts)
+        $discount = min($discount, $maxAllowedDiscount);
+
         $subtotalAfterDiscount = $subtotal - $discount;
         // No service charge for POS
         $totalAmount = $subtotalAfterDiscount;
@@ -414,7 +432,7 @@ class CheckoutSessionController extends Controller
 
         // No charge — admin only
         if ($paymentMethod === 'no_charge') {
-            if (! $user->hasAnyRole([Role::Admin, Role::SuperAdmin])) {
+            if (! $user->hasAnyRole([Role::Admin, Role::TechAdmin])) {
                 return response()->json(['message' => 'Only administrators can create no-charge orders.'], 403);
             }
         }
@@ -437,6 +455,8 @@ class CheckoutSessionController extends Controller
             'service_charge' => 0,
             'delivery_fee' => 0,
             'discount' => $discount,
+            'promo_id' => $resolvedPromo?->id,
+            'promo_name' => $resolvedPromo?->name,
             'total_amount' => $totalAmount,
             'staff_id' => $employee->id,
             'is_manual_entry' => $isManualEntry,
@@ -833,7 +853,7 @@ class CheckoutSessionController extends Controller
 
         $branchIds = $employee->branches()->pluck('branches.id');
 
-        if ($user->hasAnyRole([Role::Admin, Role::SuperAdmin])) {
+        if ($user->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             $branchIds = null; // Admin sees all
         }
 
@@ -956,7 +976,7 @@ class CheckoutSessionController extends Controller
             );
         }
 
-        if ($employee->user->hasAnyRole([Role::Admin, Role::SuperAdmin, Role::CallCenter])) {
+        if ($employee->user->hasAnyRole([Role::Admin, Role::TechAdmin, Role::CallCenter])) {
             return;
         }
 

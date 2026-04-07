@@ -24,22 +24,37 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create Super Admin role with all permissions (highest level)
-        $superAdmin = Role::updateOrCreate(
-            ['name' => RoleEnum::SuperAdmin->value, 'guard_name' => 'api'],
-            ['name' => RoleEnum::SuperAdmin->value, 'guard_name' => 'api']
+        // Platform-specific permissions that only tech_admin should have
+        $platformPermissions = [
+            Permission::AccessPlatformAdmin->value,
+            Permission::ViewSystemHealth->value,
+            Permission::ViewErrorLogs->value,
+            Permission::ManageRoles->value,
+            Permission::ResetPasswords->value,
+            Permission::ManagePlatform->value,
+            Permission::ManageCache->value,
+            Permission::ToggleMaintenance->value,
+        ];
+
+        // Create Tech Admin role (IT/Tech — full access to everything including platform tools)
+        $techAdmin = Role::updateOrCreate(
+            ['name' => RoleEnum::TechAdmin->value, 'guard_name' => 'api'],
+            ['name' => RoleEnum::TechAdmin->value, 'guard_name' => 'api']
         );
-        $this->addPermissions($superAdmin,
+        $this->addPermissions($techAdmin,
             array_map(fn ($permission) => $permission->value, Permission::cases())
         );
 
-        // Create Admin role with all permissions (legacy compatibility)
+        // Create Admin role (business owner — full business access, no platform tools)
         $admin = Role::updateOrCreate(
             ['name' => RoleEnum::Admin->value, 'guard_name' => 'api'],
             ['name' => RoleEnum::Admin->value, 'guard_name' => 'api']
         );
         $this->addPermissions($admin,
-            array_map(fn ($permission) => $permission->value, Permission::cases())
+            array_filter(
+                array_map(fn ($permission) => $permission->value, Permission::cases()),
+                fn ($permission) => ! in_array($permission, $platformPermissions, true),
+            )
         );
 
         // Create Branch Partner role (read-only investor access)

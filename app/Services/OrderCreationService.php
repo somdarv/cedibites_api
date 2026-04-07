@@ -54,10 +54,17 @@ class OrderCreationService
             $customerId = $session->customer_id;
             if (! $customerId && $session->customer_phone) {
                 $normalizedPhone = PhoneHelper::normalize($session->customer_phone);
+                $sessionName = $session->customer_name ?? 'Customer';
                 $user = User::firstOrCreate(
                     ['phone' => $normalizedPhone],
-                    ['name' => $session->customer_name ?? 'Customer']
+                    ['name' => $sessionName]
                 );
+
+                // Keep the display name current when the same phone is used with a different name
+                if ($sessionName !== 'Customer' && $user->name !== $sessionName && ! $user->wasRecentlyCreated) {
+                    $user->update(['name' => $sessionName]);
+                }
+
                 if (! $user->customer) {
                     $user->customer()->create(['is_guest' => true]);
                     $user->load('customer');
@@ -84,6 +91,9 @@ class OrderCreationService
                 'subtotal' => $session->subtotal,
                 'delivery_fee' => $session->delivery_fee,
                 'service_charge' => $session->service_charge,
+                'discount' => $session->discount ?? 0,
+                'promo_id' => $session->promo_id ?? null,
+                'promo_name' => $session->promo_name ?? null,
                 'total_amount' => $session->total_amount,
                 'status' => $isManualEntry ? 'completed' : 'received',
                 'recorded_at' => $isManualEntry ? $session->recorded_at : null,

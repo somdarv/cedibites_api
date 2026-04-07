@@ -22,9 +22,9 @@
 | `routes/promos.php`    | Promo/discount management                   |
 | `routes/channels.php`  | WebSocket/Reverb broadcasting channels      |
 
-### Models (30)
+### Models (31)
 
-**Core**: User, Customer, Employee, Branch, Address
+**Core**: User, Customer, Employee, EmployeeNote, Branch, Address
 **Menu**: MenuItem, MenuCategory, MenuTag, MenuAddOn, MenuItemOption, MenuItemOptionBranchPrice, MenuItemRating, SmartCategorySetting
 **Orders**: Order, OrderItem, OrderStatusHistory, ShiftOrder, CheckoutSession
 **Shopping**: Cart, CartItem
@@ -101,6 +101,212 @@ What the system looks like after changes.
 ### Pending / Follow-up
 Items still needing attention.
 -->
+
+---
+
+## [2026-04-07] Session: Promo System End-to-End — Migrations, Checkout Integration, Route Bug Fix
+
+### Intent
+
+Complete the promo system end-to-end after an audit found promos were "infrastructure-complete but customer-disconnected." Admin CRUD worked, but promos never reached customers or POS. This session added promo fields to the order/checkout schema, wired promo resolution into checkout and POS flows, and fixed a missing route that prevented promo resolution from ever working.
+
+### Changes Made
+
+#### Database Migrations
+
+| File                                                                                    | Change                                                                                                             | Reason                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `database/migrations/2026_04_07_003326_add_discount_and_promo_to_orders_table.php`      | **NEW** — Added `discount` decimal(10,2), `promo_id` FK (nullable), `promo_name` string (nullable) to orders table | Orders need to store applied promo and calculated discount |
+| `database/migrations/2026_04_07_003331_add_promo_fields_to_checkout_sessions_table.php` | **NEW** — Added `promo_id` FK (nullable), `promo_name` string (nullable) to checkout_sessions table                | Checkout session carries promo data to order creation      |
+
+#### Model & Service Updates
+
+| File                                    | Change                                                                                                                                    | Reason                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `app/Models/Order.php`                  | Added `discount`, `promo_id`, `promo_name` to `$fillable`; added `decimal:2` cast for `discount`; added `promo(): BelongsTo` relationship | Order ↔ Promo relationship and proper data handling          |
+| `app/Models/CheckoutSession.php`        | Added `promo_id`, `promo_name` to `$fillable`                                                                                             | Checkout session stores resolved promo                       |
+| `app/Services/OrderCreationService.php` | Now copies `discount`, `promo_id`, `promo_name` from checkout session → order during creation                                             | Promo data flows through the payment-first checkout pipeline |
+
+#### Controller & Resource Updates
+
+| File                                                     | Change                                                                                                                                                            | Reason                                                                |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/CheckoutSessionController.php` | `store()` auto-resolves best promo via `PromoResolutionService` and calculates discount; `posStore()` does server-side promo validation when `promo_id` is passed | Customer checkout gets auto-promo; POS gets explicit promo validation |
+| `app/Http/Resources/OrderResource.php`                   | Added `discount`, `promo_id`, `promo_name` to serialized output                                                                                                   | Frontend needs promo data for display                                 |
+
+#### Route Bug Fix (Critical)
+
+| File                | Change                                                                                                                               | Reason                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes/promos.php` | Added `Route::post('promos/resolve', [PromoController::class, 'resolve'])` **outside** the `permission:manage_menu` middleware group | **BUG FIX**: Route was never registered! `PromoController@resolve`, `ResolvePromoRequest`, `PromoResolutionService`, and frontend `ApiPromoService.resolvePromo()` all existed — but the route binding was missing. POS `useEffect` called the API, got 404, `.catch()` silently set `activePromo=null`. Placed outside `manage_menu` gate so any authenticated user can resolve. |
+
+### Decisions
+
+- **Decision**: Promo resolve route placed outside `manage_menu` permission gate
+    - **Rationale**: Both POS staff and customers need to resolve promos — `manage_menu` is for admin CRUD operations only
+- **Decision**: `PromoResolutionService` returns the promo with highest calculated discount when multiple apply
+    - **Rationale**: Best-value-for-customer approach; simpler than presenting a promo picker
+- **Decision**: `posStore()` does server-side promo validation (re-resolves and compares); `store()` auto-resolves
+    - **Rationale**: POS sends `promo_id` explicitly (staff sees the promo first); customer checkout auto-applies the best one
+- **Decision**: `discount` stored as `decimal(10,2)` on orders table
+    - **Rationale**: Monetary precision; matches `total` and other monetary columns
+- **Decision**: 2 active test promos seeded: "10% off orders over ₵100" (min_order_value=100) and "20% off for new customers" (global, no minimum)
+    - **Note**: The "20% off for new customers" promo currently applies to ALL users — no customer-specific filtering logic implemented yet
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                    | Change                                                                                                                                                   | Triggered By                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `types/api.ts`                          | Added `promo_id?`, `promo_name?` to Order interface                                                                                                      | OrderResource now serializes promo fields  |
+| `lib/api/adapters/order.adapter.ts`     | Maps `promo_name → promoCode`                                                                                                                            | Adapter alignment with new API response    |
+| `app/(customer)/checkout/page.tsx`      | Auto-resolves promo, shows green discount row with TagIcon                                                                                               | Checkout promo integration                 |
+| `app/components/order/OrderDetails.tsx` | Discount + service charge display                                                                                                                        | Order detail promo display                 |
+| `app/pos/terminal/page.tsx`             | Fixed: passes `cartTotal` to `resolvePromo()` (was `undefined` → subtotal=0 → ₵0.00 discount); rewrote total section to show Subtotal → Discount → Total | POS subtotal bug fix + display enhancement |
+| `app/staff/new-order/context.tsx`       | Same subtotal bug fix — compute subtotal before resolve call                                                                                             | Staff new-order promo fix                  |
+
+### Current State
+
+- **Promo schema**: `orders` table has `discount`, `promo_id`, `promo_name`; `checkout_sessions` table has `promo_id`, `promo_name`
+- **Promo flow**: End-to-end working — `PromoResolutionService` resolves → CheckoutSession stores → `OrderCreationService` copies to Order → `OrderResource` serializes
+- **Route**: `POST /v1/promos/resolve` now registered and accessible to any authenticated user
+- **Models**: Order has `promo()` BelongsTo relationship
+- **Migrations**: Created, need to be run in production
+- **Pint**: Clean
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migrations `2026_04_07_003326_*` and `2026_04_07_003331_*` in production
+- "New customers" promo needs actual customer-filtering logic in `PromoResolutionService` if intended to be customer-specific
+- Menu item promo badges (frontend wants "badge better than strikethrough" — deferred due to architectural complexity)
+- `PromoBanner.tsx` on frontend still uses hardcoded data
+- Consider adding promo usage tracking (how many times a promo was applied, total discount given)
+
+---
+
+## [2026-04-07] Session: Role Restructuring — `platform_admin` → `tech_admin`, Removed `super_admin`
+
+### Intent
+
+Simplify the role hierarchy by renaming `platform_admin` to `tech_admin` (IT personnel with full system access) and merging `super_admin` into `admin` (business owner role). The previous hierarchy had overlapping roles — `platform_admin` and `super_admin` had near-identical permissions, and `admin` was redundant with `super_admin`.
+
+### Changes Made
+
+| File                                                                                                   | Change                                                                                                                                                                                                                                                                               | Reason                                                       |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `app/Enums/Role.php`                                                                                   | Renamed `PlatformAdmin` → `TechAdmin` (value: `tech_admin`), removed `SuperAdmin` case. Enum now has 8 roles.                                                                                                                                                                        | Clear IT vs business separation                              |
+| `database/seeders/RoleSeeder.php`                                                                      | Restructured permission assignments: `tech_admin` gets ALL permissions; `admin` loses 8 platform-specific permissions (`access_platform_admin`, `view_system_health`, `view_error_logs`, `manage_roles`, `reset_passwords`, `manage_platform`, `manage_cache`, `toggle_maintenance`) | Clean separation — business owners don't need platform tools |
+| `database/migrations/2026_04_07_002415_rename_platform_admin_to_tech_admin_and_remove_super_admin.php` | **NEW** — Renames `platform_admin` role to `tech_admin` in DB, reassigns `super_admin` users to `admin`, cleans up `super_admin` permission entries, deletes `super_admin` role record                                                                                               | Safe data migration for existing users and permissions       |
+| `routes/platform.php`                                                                                  | Updated role references from `platform_admin` to `tech_admin`                                                                                                                                                                                                                        | Route middleware alignment                                   |
+| `routes/admin.php`                                                                                     | Updated role references — replaced `super_admin` with `admin` or `tech_admin` as appropriate                                                                                                                                                                                         | Route access control alignment                               |
+| `routes/channels.php`                                                                                  | Updated broadcasting channel role checks                                                                                                                                                                                                                                             | WebSocket auth alignment                                     |
+| `app/Http/Controllers/Api/Admin/PlatformController.php`                                                | Updated role/permission checks from `platform_admin` to `tech_admin`                                                                                                                                                                                                                 | Controller authorization                                     |
+| `app/Http/Controllers/Api/RoleController.php`                                                          | Updated display name map and role references                                                                                                                                                                                                                                         | Role listing endpoint                                        |
+| `app/Http/Controllers/Api/ShiftController.php`                                                         | Updated role references                                                                                                                                                                                                                                                              | Shift management access                                      |
+| `app/Http/Controllers/Api/EmployeeOrderController.php`                                                 | Updated role references                                                                                                                                                                                                                                                              | Employee order access                                        |
+| `app/Http/Controllers/Api/CheckoutSessionController.php`                                               | Updated role references                                                                                                                                                                                                                                                              | Checkout session access                                      |
+| `app/Http/Controllers/Api/OrderController.php`                                                         | Updated role references                                                                                                                                                                                                                                                              | Order management access                                      |
+| `app/Http/Controllers/Api/PosOrderController.php`                                                      | Updated role references                                                                                                                                                                                                                                                              | POS order access                                             |
+| `app/Http/Middleware/EnsureBranchAccess.php`                                                           | Updated role checks from `super_admin`/`platform_admin` to `tech_admin`/`admin`                                                                                                                                                                                                      | Middleware authorization                                     |
+| `app/Services/OrderManagementService.php`                                                              | Updated role references for order management permissions                                                                                                                                                                                                                             | Service-level authorization                                  |
+
+### Decisions
+
+- **Decision**: Named the role `tech_admin` over alternatives (`system_admin`, `it_admin`)
+    - **Alternatives**: `system_admin` (too generic), `it_admin` (less professional)
+    - **Rationale**: Concise, clear, immediately communicates "technical/IT personnel"
+- **Decision**: `admin` keeps full business permissions but loses 8 platform-specific permissions
+    - **Rationale**: Clean separation of concerns — business owners manage the business, IT manages the platform. No business scenario requires an admin to toggle maintenance mode or manage cache.
+- **Decision**: `tech_admin` gets ALL permissions (replaces what `super_admin` had)
+    - **Rationale**: IT personnel need unrestricted access for support, debugging, and platform operations
+- **Decision**: Merged `super_admin` into `admin` rather than into `tech_admin`
+    - **Rationale**: Most `super_admin` users were business owners, not IT. They map naturally to the `admin` role.
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                             | Change                                                                           | Triggered By                  |
+| ------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
+| `types/staff.ts`                                 | `StaffRole` type updated: `platform_admin` → `tech_admin`, `super_admin` removed | Role enum changes             |
+| `types/order.ts`                                 | `StaffRole` re-export updated                                                    | Role type alignment           |
+| `lib/api/services/employee.service.ts`           | Role mapping simplified to 1:1 (no more collapsing `admin` → `super_admin`)      | Role hierarchy simplification |
+| `app/components/providers/StaffAuthProvider.tsx` | Role routing updated for new role names                                          | Auth flow alignment           |
+| 7 page/layout files                              | Role checks updated across admin, POS, order-manager, and staff portals          | Authorization UI alignment    |
+
+### Current State
+
+- **Role enum**: 8 roles — `tech_admin`, `admin`, `branch_manager`, `kitchen_staff`, `sales_staff`, `delivery_staff`, `cashier`, `pos_operator`
+- **`tech_admin`**: Full system access (ALL permissions) — for IT personnel
+- **`admin`**: Full business access minus 8 platform permissions — for business owners
+- **`super_admin`**: Completely removed from the system
+- **`platform_admin`**: Renamed to `tech_admin` — no longer exists
+- **Migration**: Created, needs to be run in production
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_07_002415_rename_platform_admin_to_tech_admin_and_remove_super_admin.php` in production
+- Verify no stale `super_admin` or `platform_admin` references remain in codebase
+- Update any external documentation or API docs referencing old role names
+- Monitor for auth issues after migration — users previously on `super_admin` will now be `admin`
+
+---
+
+## [2026-04-06] Session: Temporary Password Simplification + Employee Notes API
+
+### Intent
+
+Replace complex auto-generated staff passwords with human-friendly ones. Build a backend API for employee notes so staff notes persist across devices and sessions (replacing frontend localStorage).
+
+### Changes Made
+
+#### Temporary Password Simplification
+
+| File                                              | Change                                                                                                                                                                                                                                      | Reason                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/EmployeeController.php` | Replaced `Str::password(12)` with new `generateSimplePassword()` private method — produces passwords like "HappyBlue42!" (adjective + noun + 2-3 digits + special char from pool of 15 adjectives × 15 nouns). Removed unused `Str` import. | Old generated passwords were too complex for staff to remember/type |
+
+#### Employee Notes API
+
+| File                                                                    | Change                                                                                                                                           | Reason                                                           |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `database/migrations/2026_04_06_113513_create_employee_notes_table.php` | **NEW** — Creates `employee_notes` table: employee_id (FK), author_id (FK→users), content (text), timestamps, index on [employee_id, created_at] | Persistent storage for staff notes with author tracking          |
+| `app/Models/EmployeeNote.php`                                           | **NEW** — Model with fillable=[employee_id, author_id, content], belongsTo Employee + User (author)                                              | Data model for employee notes                                    |
+| `app/Models/Employee.php`                                               | Added `notes(): HasMany` relationship                                                                                                            | Employee → notes relationship for eager loading and querying     |
+| `app/Http/Controllers/Api/EmployeeController.php`                       | Added `notes()` (list), `addNote()` (create), `deleteNote()` (delete with author-only authorization) methods                                     | CRUD endpoints — only the note author can delete their own notes |
+| `routes/admin.php`                                                      | Added GET/POST `employees/{employee}/notes` and DELETE `employees/{employee}/notes/{note}` with appropriate permission middleware                | API routes for notes sub-resource under employees                |
+
+### Decisions
+
+- **Decision**: Human-friendly passwords using adjective + noun + digits + special char pattern
+    - **Alternatives**: Keep `Str::password(12)`, use PIN-based temporary codes
+    - **Rationale**: Staff need to type these passwords on first login; "HappyBlue42!" is memorable while still meeting complexity requirements (uppercase, lowercase, digits, special)
+- **Decision**: Notes as a sub-resource of employees with author tracking
+    - **Alternatives**: Generic notes system, localStorage (previous approach)
+    - **Rationale**: Notes are tightly coupled to employees; author tracking enables "only author can delete" policy and audit trail
+- **Decision**: Only the note author can delete their own notes
+    - **Rationale**: Prevents accidental deletion of other staff members' notes while keeping the system simple (no separate moderator permission)
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                   | Change                                                                                           | Triggered By                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `lib/api/services/employee.service.ts` | Added `EmployeeNoteResponse` type and `getNotes()`, `addNote()`, `deleteNote()` service methods  | Notes API integration           |
+| `app/admin/staff/page.tsx`             | Complete redesign with StaffDetailDrawer; Notes tab now fetches from API instead of localStorage | Notes API + staff page redesign |
+
+### Current State
+
+- **Models**: 31 (added EmployeeNote)
+- **Employee notes**: Full CRUD via API with author tracking and author-only deletion
+- **Temporary passwords**: Human-friendly format (e.g., "HappyBlue42!") — 15 adjectives × 15 nouns × digits × special chars
+- **Migration**: Created, needs to be run in production
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_06_113513_create_employee_notes_table.php` in production
+- Consider adding pagination to notes endpoint for employees with many notes
+- Activity logging for note creation/deletion
+- Consider adding `manage_employee_notes` permission for finer-grained access control
 
 ---
 
@@ -237,7 +443,7 @@ Remove the legacy `employee` role (a duplicate of `sales_staff` with identical p
 
 ### Current State
 
-- **Role enum**: 8 roles (super_admin, admin, branch_manager, kitchen_staff, sales_staff, delivery_staff, cashier, pos_operator)
+- **Role enum**: 8 roles (tech_admin, admin, branch_manager, kitchen_staff, sales_staff, delivery_staff, cashier, pos_operator)
 - **Permissions**: All 24 permissions remain in the system, now fully exposed to frontend for per-user toggling
 - **Migration**: Created but needs to be run in production
 - **IAM Audit KB**: 36 total findings documented (IAM-001 through IAM-036), 16 new from this session

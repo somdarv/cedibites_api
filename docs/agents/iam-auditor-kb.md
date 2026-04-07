@@ -1,6 +1,6 @@
 # IAM Auditor Knowledge Base
 
-## Last Updated: 2026-04-06 by IAM Auditor (all 22 open findings resolved — full IAM hardening pass)
+## Last Updated: 2026-04-07 by IAM Auditor (recoverable password system implemented for tech admin)
 
 ---
 
@@ -11,31 +11,33 @@
 **Model**: `app/Models/User.php`
 **Table**: `users`
 
-| Field                      | Type     | Nullable | Notes                                                          |
-| -------------------------- | -------- | -------- | -------------------------------------------------------------- |
-| id                         | bigint   | No       | PK                                                             |
-| name                       | string   | No       |                                                                |
-| email                      | string   | Yes      | Not required for customers                                     |
-| username                   | string   | Yes      | ✅ Removed from `$fillable` — dead field, no longer assignable |
-| phone                      | string   | No       | Primary identifier for customers, also used for employee login |
-| password                   | string   | Yes      | Nullable — customers have no password (OTP-only)               |
-| must_reset_password        | boolean  | No       | Flag for forced password reset, default false                  |
-| password_reset_required_at | datetime | Yes      | Timestamp when reset was required                              |
-| email_verified_at          | datetime | Yes      |                                                                |
-| remember_token             | string   | Yes      |                                                                |
-| deleted_at                 | datetime | Yes      | SoftDeletes                                                    |
+| Field                      | Type     | Nullable | Notes                                                                                                             |
+| -------------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| id                         | bigint   | No       | PK                                                                                                                |
+| name                       | string   | No       |                                                                                                                   |
+| email                      | string   | Yes      | Not required for customers                                                                                        |
+| username                   | string   | Yes      | ✅ Removed from `$fillable` — dead field, no longer assignable                                                    |
+| phone                      | string   | No       | Primary identifier for customers, also used for employee login                                                    |
+| password                   | string   | Yes      | Nullable — customers have no password (OTP-only)                                                                  |
+| must_reset_password        | boolean  | No       | Flag for forced password reset, default false                                                                     |
+| password_reset_required_at | datetime | Yes      | Timestamp when reset was required                                                                                 |
+| platform_passcode          | string   | Yes      | Hashed 6-digit passcode for platform admin sensitive actions                                                      |
+| recoverable_password       | text     | Yes      | AES-256-CBC encrypted (Laravel `encrypted` cast). Stores recoverable plaintext password for tech admin visibility |
+| email_verified_at          | datetime | Yes      |                                                                                                                   |
+| remember_token             | string   | Yes      |                                                                                                                   |
+| deleted_at                 | datetime | Yes      | SoftDeletes                                                                                                       |
 
 **Traits**: HasApiTokens (Sanctum), HasFactory, HasRoles (Spatie), LogsActivity, Notifiable, SoftDeletes, CausesActivity
 **Guard**: `$guard_name = 'api'` (Spatie Permission)
 **Activity Logging**: Logs `created` events only, tracks `name`, `phone`, `email`, log name `auth`
-**Casts**: `email_verified_at` → datetime, `password` → hashed, `must_reset_password` → boolean, `password_reset_required_at` → datetime
+**Casts**: `email_verified_at` → datetime, `password` → hashed, `recoverable_password` → encrypted, `must_reset_password` → boolean, `password_reset_required_at` → datetime, `platform_passcode` → hashed
 
 **Relationships**:
 
 - `hasOne(Customer)` — customer identity extension
 - `hasOne(Employee)` — staff identity extension
 
-**⚠️ Dual-Identity Risk**: A User can have BOTH a Customer and an Employee record simultaneously. No database constraint or application-level guard prevents this. If a staff member verifies an OTP or hits `/auth/user`, they auto-get a Customer record (see §1.4).
+**⚠️ Dual-Identity — By Design**: A User can have BOTH a Customer and an Employee record simultaneously. This is intentional — staff members can log in as customer (OTP) and as staff (password) with separate tokens. `verifyOTP()` and `user()` create Customer records for Employee users when they authenticate via the customer flow.
 
 ### 1.2 Customer Identity Current State
 
@@ -105,21 +107,22 @@
 **Controller**: `App\Http\Controllers\Api\AuthController`
 **Routes**: `routes/auth.php`
 
-| Step | Method        | Route                     | Middleware          | Notes                                                                                                                                       |
-| ---- | ------------- | ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | sendOTP       | POST /auth/send-otp       | throttle:otp-send   | Generates 6-digit OTP via OTPService, sends SMS + optional email                                                                            |
-| 2    | verifyOTP     | POST /auth/verify-otp     | throttle:otp-verify | Verifies OTP; if user exists, returns token; if not, returns `requires_registration: true`. ⚠️ Auto-creates Customer on Employee-only users |
-| 3a   | register      | POST /auth/register       | None                | Creates User + Customer in transaction. Requires recently verified OTP                                                                      |
-| 3b   | quickRegister | POST /auth/quick-register | None                | ⚠️ Public, no OTP required. Creates/merges User + Customer. Reuses existing users by phone                                                  |
-| 4    | user          | GET /auth/user            | auth:sanctum        | Returns authenticated user. ⚠️ Auto-creates Customer if missing                                                                             |
-| 5    | logout        | POST /auth/logout         | auth:sanctum        | Revokes all tokens, dispatches CustomerSessionEvent                                                                                         |
+| Step | Method        | Route                     | Middleware          | Notes                                                                                                                                                        |
+| ---- | ------------- | ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | sendOTP       | POST /auth/send-otp       | throttle:otp-send   | Generates 6-digit OTP via OTPService, sends SMS + optional email                                                                                             |
+| 2    | verifyOTP     | POST /auth/verify-otp     | throttle:otp-verify | Verifies OTP; if user exists, returns token; if not, returns `requires_registration: true`. ✅ Creates Customer for Employee users (dual-identity by design) |
+| 3a   | register      | POST /auth/register       | None                | Creates User + Customer in transaction. Requires recently verified OTP                                                                                       |
+| 3b   | quickRegister | POST /auth/quick-register | None                | ⚠️ Public, no OTP required. Creates/merges User + Customer. Reuses existing users by phone                                                                   |
+| 4    | user          | GET /auth/user            | auth:sanctum        | Returns authenticated user. ✅ Creates Customer if missing (dual-identity by design)                                                                         |
+| 5    | logout        | POST /auth/logout         | auth:sanctum        | Revokes all tokens, dispatches CustomerSessionEvent                                                                                                          |
 
 **Known Issues**:
 
 - `quickRegister()` is public with no auth — can create/merge users without verification
-- `verifyOTP()` and `user()` auto-create Customer records on Employee-only users without explicit intent
 - `register` and `quickRegister` have NO rate limiting (only sendOTP and verifyOTP are throttled)
 - OTP stored in plain text (see §1.4 OTP section)
+
+**✅ Name Update on Reuse**: POS, guest-order, and checkout-session flows update `User.name` when the same phone is used with a different name (`PosOrderController`, `OrderController`, `OrderCreationService`). Per-order `contact_name` preserves historical accuracy.
 
 #### Flow 2: Employee Password Authentication
 
@@ -207,16 +210,17 @@
 
 ### 2.1 Current Roles
 
-| Role          | Enum Value       | Description                                                 | Status |
-| ------------- | ---------------- | ----------------------------------------------------------- | ------ |
-| SuperAdmin    | `super_admin`    | God mode. Full platform access                              | Active |
-| Admin         | `admin`          | Administrative access (identical to SuperAdmin in practice) | Active |
-| Manager       | `manager`        | Branch manager. Scoped to managed branches                  | Active |
-| SalesStaff    | `sales_staff`    | POS/sales operations staff                                  | Active |
-| BranchPartner | `branch_partner` | External branch partner. Read-only analytics                | Active |
-| CallCenter    | `call_center`    | Call center agents. Order creation via phone                | Active |
-| Kitchen       | `kitchen`        | Kitchen display operators. View and update orders           | Active |
-| Rider         | `rider`          | Delivery riders. View assigned deliveries                   | Active |
+| Role          | Enum Value       | Description                                                             | Status |
+| ------------- | ---------------- | ----------------------------------------------------------------------- | ------ |
+| PlatformAdmin | `platform_admin` | IT/tech role. System health, error logs, admin mgmt, passcode-gated ops | Active |
+| SuperAdmin    | `super_admin`    | God mode. Full platform access                                          | Active |
+| Admin         | `admin`          | Administrative access (identical to SuperAdmin in practice)             | Active |
+| Manager       | `manager`        | Branch manager. Scoped to managed branches                              | Active |
+| SalesStaff    | `sales_staff`    | POS/sales operations staff                                              | Active |
+| BranchPartner | `branch_partner` | External branch partner. Read-only analytics                            | Active |
+| CallCenter    | `call_center`    | Call center agents. Order creation via phone                            | Active |
+| Kitchen       | `kitchen`        | Kitchen display operators. View and update orders                       | Active |
+| Rider         | `rider`          | Delivery riders. View assigned deliveries                               | Active |
 
 ### 2.2 Current Permissions
 
@@ -247,6 +251,14 @@
 | ManageSettings      | `manage_settings`       | SuperAdmin, Admin, Manager                                                                  |
 | ViewMyShifts        | `view_my_shifts`        | SuperAdmin, Admin, Manager, SalesStaff, Employee, CallCenter                                |
 | ViewMySales         | `view_my_sales`         | SalesStaff, Employee, CallCenter                                                            |
+| AccessPlatformAdmin | `access_platform_admin` | PlatformAdmin                                                                               |
+| ViewSystemHealth    | `view_system_health`    | PlatformAdmin                                                                               |
+| ViewErrorLogs       | `view_error_logs`       | PlatformAdmin                                                                               |
+| ManageRoles         | `manage_roles`          | PlatformAdmin                                                                               |
+| ResetPasswords      | `reset_passwords`       | PlatformAdmin                                                                               |
+| ManagePlatform      | `manage_platform`       | PlatformAdmin                                                                               |
+| ManageCache         | `manage_cache`          | PlatformAdmin                                                                               |
+| ToggleMaintenance   | `toggle_maintenance`    | PlatformAdmin                                                                               |
 
 ### 2.3 Route-Level Access Map
 
@@ -260,15 +272,17 @@
 | `routes/manager.php`   | auth:sanctum  | `permission:view_branches` + `branch.access` + per-route permissions                      | Managers/admins with branch ownership verified                 | 2026-04-06   |
 | `routes/admin.php`     | auth:sanctum  | Granular per-group permissions + `role:admin\|super_admin` for cancels/settings           | Best-protected route file                                      | 2026-04-06   |
 | `routes/promos.php`    | auth:sanctum  | `permission:manage_menu`                                                                  | Users with manage_menu permission                              | 2026-04-06   |
+| `routes/platform.php`  | auth:sanctum  | `role:platform_admin` + per-route permissions                                             | Platform admins only. Passcode-gated for sensitive ops         | 2026-04-06   |
 
 ### 2.4 Frontend Portal-Permission Gating
 
-| Portal                       | Token Key               | Gate Permission              | Nav Filtering            | Session Revocation | Last Verified |
-| ---------------------------- | ----------------------- | ---------------------------- | ------------------------ | ------------------ | ------------- |
-| Staff (`app/staff/`)         | `cedibites_staff_token` | Per-item via `can()` method  | ✅ Per-item + role-based | ❌ None            | 2026-04-06    |
-| Admin (`app/admin/`)         | `cedibites_staff_token` | `access_admin_panel` only    | ❌ All items visible     | ❌ None            | 2026-04-06    |
-| Partner (`app/partner/`)     | `cedibites_staff_token` | `access_partner_portal` only | ❌ All items visible     | ❌ None            | 2026-04-06    |
-| Customer (`app/(customer)/`) | `cedibites_auth_token`  | None (open)                  | N/A                      | ❌ None            | 2026-04-06    |
+| Portal                           | Token Key               | Gate Permission              | Nav Filtering            | Session Revocation | Last Verified |
+| -------------------------------- | ----------------------- | ---------------------------- | ------------------------ | ------------------ | ------------- |
+| Staff (`app/staff/`)             | `cedibites_staff_token` | Per-item via `can()` method  | ✅ Per-item + role-based | ❌ None            | 2026-04-06    |
+| Admin (`app/admin/`)             | `cedibites_staff_token` | `access_admin_panel` only    | ❌ All items visible     | ❌ None            | 2026-04-06    |
+| Platform (`app/admin/platform/`) | `cedibites_staff_token` | `access_platform_admin`      | ✅ Conditional sidebar   | ❌ None            | 2026-04-06    |
+| Partner (`app/partner/`)         | `cedibites_staff_token` | `access_partner_portal` only | ❌ All items visible     | ❌ None            | 2026-04-06    |
+| Customer (`app/(customer)/`)     | `cedibites_auth_token`  | None (open)                  | N/A                      | ❌ None            | 2026-04-06    |
 
 **Frontend Role Mapping** (`employee.service.ts`):
 
@@ -398,10 +412,14 @@
 
 ## 7. Changelog
 
-| Date       | Section Updated      | Summary of Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Trigger                |
-| ---------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| 2026-04-06 | §1, §3, §5, §7       | All 22 open findings (IAM-008/013/014/019/021-036) resolved and moved to §3.2. Key changes: EnsureCustomerActive middleware, customer token revocation on suspend, unauthorized() JSON body, employee status in auth resources, frontend status alignment (4 states), customer force-logout, OTP cleanup expanded, public order PII stripped, username removed from fillable, active sessions endpoint, failed login logging. §1 updated (username, OTP, force-logout). §5 verified OTP retention. | Implement all findings |
-| 2026-04-06 | §2, §4, §7           | Expanded frontend permission granularity: all 24 backend permissions now individually toggleable per-user in admin + manager staff UIs. StaffPermissions expanded 10→25 fields. BACKEND_TO_FRONTEND data-driven map replaces switch/case. Removed last `employee` role filter references.                                                                                                                                                                                                          | User request           |
-| 2026-04-06 | §2.1, §3.1, §3.2, §7 | Re-audit complete. Removed legacy `employee` role (migration + enum + seeder + frontend mapper). 16 new findings (IAM-021 through IAM-036). Moved IAM-015/IAM-020 to resolved. IAM-020 confirmed already working.                                                                                                                                                                                                                                                                                  | Re-audit + UX audit    |
-| 2026-04-06 | §3.1, §3.2, §7       | Bulk fix implementation: 14 of 20 findings resolved. Moved IAM-001 through IAM-018 (minus IAM-008/013/014/015/019/020) to §3.2. 6 remain open.                                                                                                                                                                                                                                                                                                                                                     | Fix all                |
-| 2026-04-06 | All sections         | Initial KB creation. Comprehensive audit of both repos. 20 findings documented (2 Critical, 4 High, 9 Medium, 5 Low). All 7 sections populated.                                                                                                                                                                                                                                                                                                                                                    | First activation       |
+| Date       | Section Updated      | Summary of Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Trigger                |
+| ---------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| 2026-04-07 | §1.1, §4, §7         | Recoverable password system for tech admin. Migration: `recoverable_password` (text, nullable) on `users`. User model: `encrypted` cast (AES-256-CBC), added to `$fillable` and `$hidden`. PlatformController: `staffPasswords()` (list all with passwords, passcode-gated), `viewPassword()` (single view, passcode-gated, activity-logged), `resetPassword()` now stores recoverable. EmployeeController: `store()` supports `password_mode` (auto/custom/prompt). EmployeeAuthController: `changePassword()` and `resetPassword()` update `recoverable_password`. Routes: `POST platform/staff-passwords`, `POST platform/view-password` added. | User request           |
+| 2026-04-06 | §1.1, §2.1-§2.4, §7  | Platform Admin role added. New `platform_admin` role (level 0, all perms + 8 new platform perms). `platform_passcode` field on users (hashed). PlatformController (12 endpoints): health, errors, failed-jobs, retry, reset-password, admins CRUD, passcode update, cache clear, maintenance toggle, active sessions. SystemHealthService + SmartErrorService created. `routes/platform.php` created. Frontend: platform nav in admin sidebar (conditional on `access_platform_admin`), 3 pages (health, errors, admins), `usePlatform` hook, `platformService` with full types.                                                                   | User request           |
+| 2026-04-06 | §1.1, §1.4, §4, §7   | Dual-identity now intentional: staff can login as customer (OTP) and staff (password). `verifyOTP()` and `user()` create Customer records for Employee users. Name-update-on-reuse added to POS/OrderController/OrderCreationService. Admin customers page now fully server-side paginated (status, sort_by filters added to CustomerController::index).                                                                                                                                                                                                                                                                                           | User request           |
+| ---------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------                                                                                                                                                 | ---------------------- |
+| 2026-04-06 | §1, §3, §5, §7       | All 22 open findings (IAM-008/013/014/019/021-036) resolved and moved to §3.2. Key changes: EnsureCustomerActive middleware, customer token revocation on suspend, unauthorized() JSON body, employee status in auth resources, frontend status alignment (4 states), customer force-logout, OTP cleanup expanded, public order PII stripped, username removed from fillable, active sessions endpoint, failed login logging. §1 updated (username, OTP, force-logout). §5 verified OTP retention.                                                                                                                                                 | Implement all findings |
+| 2026-04-06 | §2, §4, §7           | Expanded frontend permission granularity: all 24 backend permissions now individually toggleable per-user in admin + manager staff UIs. StaffPermissions expanded 10→25 fields. BACKEND_TO_FRONTEND data-driven map replaces switch/case. Removed last `employee` role filter references.                                                                                                                                                                                                                                                                                                                                                          | User request           |
+| 2026-04-06 | §2.1, §3.1, §3.2, §7 | Re-audit complete. Removed legacy `employee` role (migration + enum + seeder + frontend mapper). 16 new findings (IAM-021 through IAM-036). Moved IAM-015/IAM-020 to resolved. IAM-020 confirmed already working.                                                                                                                                                                                                                                                                                                                                                                                                                                  | Re-audit + UX audit    |
+| 2026-04-06 | §3.1, §3.2, §7       | Bulk fix implementation: 14 of 20 findings resolved. Moved IAM-001 through IAM-018 (minus IAM-008/013/014/015/019/020) to §3.2. 6 remain open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Fix all                |
+| 2026-04-06 | All sections         | Initial KB creation. Comprehensive audit of both repos. 20 findings documented (2 Critical, 4 High, 9 Medium, 5 Low). All 7 sections populated.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | First activation       |

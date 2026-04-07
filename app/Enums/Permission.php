@@ -50,4 +50,14 @@ enum Permission: string
     case ManageSettings = 'manage_settings';
     case ViewMyShifts = 'view_my_shifts';
     case ViewMySales = 'view_my_sales';
+
+    // Platform Admin permissions
+    case AccessPlatformAdmin = 'access_platform_admin';
+    case ViewSystemHealth = 'view_system_health';
+    case ViewErrorLogs = 'view_error_logs';
+    case ManageRoles = 'manage_roles';
+    case ResetPasswords = 'reset_passwords';
+    case ManagePlatform = 'manage_platform';
+    case ManageCache = 'manage_cache';
+    case ToggleMaintenance = 'toggle_maintenance';
 }

@@ -8,10 +8,10 @@ enum Role: string
 {
     use HasEnumHelpers;
 
+    case TechAdmin = 'tech_admin';
     case Admin = 'admin';
     case Manager = 'manager';
     case SalesStaff = 'sales_staff';
-    case SuperAdmin = 'super_admin';
     case BranchPartner = 'branch_partner';
     case CallCenter = 'call_center';
     case Kitchen = 'kitchen';

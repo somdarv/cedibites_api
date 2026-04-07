@@ -17,7 +17,7 @@ class EmployeeOrderController extends Controller
     ) {}
 
     /**
-     * Get orders for employee's branch (or filtered for super_admin).
+     * Get orders for employee's branch (or filtered for admin/tech_admin).
      */
     public function index(Request $request): JsonResponse
     {
@@ -70,7 +70,7 @@ class EmployeeOrderController extends Controller
         $employee = $request->user()->employee;
         $user = $request->user();
 
-        $isAdmin = $user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::SuperAdmin]);
+        $isAdmin = $user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::TechAdmin]);
 
         if (! $isAdmin && (! $employee || ! $employee->branches()->where('branches.id', $order->branch_id)->exists())) {
             return response()->error('You can only update orders from your branch.', 403);

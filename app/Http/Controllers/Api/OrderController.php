@@ -100,10 +100,17 @@ class OrderController extends Controller
             $guestPhone = $validated['customer_phone'] ?? null;
             if ($guestPhone) {
                 $normalizedPhone = $this->normalizePhone($guestPhone);
+                $guestName = $validated['customer_name'] ?? 'Customer';
                 $guestUser = User::firstOrCreate(
                     ['phone' => $normalizedPhone],
-                    ['name' => $validated['customer_name'] ?? 'Customer']
+                    ['name' => $guestName]
                 );
+
+                // Keep the display name current when the same phone is used with a different name
+                if ($guestName !== 'Customer' && $guestUser->name !== $guestName && ! $guestUser->wasRecentlyCreated) {
+                    $guestUser->update(['name' => $guestName]);
+                }
+
                 if (! $guestUser->customer) {
                     $guestUser->customer()->create(['is_guest' => true]);
                     $guestUser->load('customer');
@@ -276,7 +283,7 @@ class OrderController extends Controller
         $user = Auth::guard('sanctum')->user();
         $employee = $user?->employee;
 
-        if ($employee && ! $user->hasAnyRole([Role::Admin, Role::SuperAdmin])) {
+        if ($employee && ! $user->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             $allowed = $employee->branches()->pluck('branches.id');
             $query->whereIn('branch_id', $allowed);
             if ($branchId !== null && $branchId !== '') {

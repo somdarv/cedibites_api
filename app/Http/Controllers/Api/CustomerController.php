@@ -24,8 +24,11 @@ class CustomerController extends Controller
             ->withCount('orders')
             ->withSum(['orders as total_spend' => fn ($q) => $q->whereIn('status', ['completed', 'delivered'])], 'total_amount')
             ->when($request->is_guest !== null, fn ($query) => $query->where('is_guest', $request->boolean('is_guest')))
+            ->when($request->status, fn ($query) => $query->where('status', $request->status))
             ->when($request->search, fn ($query) => $query->whereHas('user', fn ($u) => $u->where('name', 'like', "%{$request->search}%")->orWhere('phone', 'like', "%{$request->search}%")))
-            ->latest()
+            ->when($request->sort_by === 'orders', fn ($query) => $query->orderByDesc('orders_count'))
+            ->when($request->sort_by === 'spend', fn ($query) => $query->orderByDesc('total_spend'))
+            ->when(! in_array($request->sort_by, ['orders', 'spend']), fn ($query) => $query->latest())
             ->paginate($request->per_page ?? 15);
 
         return response()->json([

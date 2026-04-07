@@ -6,6 +6,7 @@ use App\Events\CustomerSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\SendOTPRequest;
+use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\VerifyOTPRequest;
 use App\Http\Resources\AuthUserResource;
 use App\Models\Customer;
@@ -95,18 +96,15 @@ class AuthController extends Controller
         $user = User::where('phone', $phone)->first();
 
         if ($user) {
-            // Only auto-create Customer if user doesn't already have an Employee record
-            // to prevent unintended dual-identity scenarios
-            if (! $user->customer && ! $user->employee) {
+            // Create a Customer record if one doesn't exist.
+            // Staff members can also be customers (dual-identity) — they use
+            // OTP login as customer and password login as staff.
+            if (! $user->customer) {
                 Customer::create([
                     'user_id' => $user->id,
                     'is_guest' => false,
                 ]);
                 $user->load('customer');
-            } elseif (! $user->customer && $user->employee) {
-                return response()->unprocessable('This phone number is associated with a staff account. Please use employee login.', [
-                    'phone' => ['This phone number belongs to a staff account'],
-                ]);
             }
 
             $token = $user->createToken('auth-token')->plainTextToken;
@@ -181,12 +179,8 @@ class AuthController extends Controller
     {
         $user = $request->user()->load(['customer', 'roles.permissions']);
 
+        // Ensure a Customer record exists — staff can also be customers.
         if (! $user->customer) {
-            // Only auto-create Customer if user doesn't have an Employee record
-            if ($user->employee) {
-                return response()->success(new AuthUserResource($user->load('roles.permissions')));
-            }
-
             Customer::create([
                 'user_id' => $user->id,
                 'is_guest' => false,
@@ -257,6 +251,25 @@ class AuthController extends Controller
 
             return response()->server_error();
         }
+    }
+
+    /**
+     * Update authenticated customer's profile.
+     */
+    public function updateProfile(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $validated = $request->validated();
+
+        $user->update($validated);
+
+        activity('auth')
+            ->causedBy($user)
+            ->event('profile_updated')
+            ->withProperties(['fields' => array_keys($validated)])
+            ->log("Profile updated: {$user->name} ({$user->phone})");
+
+        return response()->success(new AuthUserResource($user->load(['customer', 'roles.permissions'])));
     }
 
     /**

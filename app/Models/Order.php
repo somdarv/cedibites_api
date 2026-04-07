@@ -66,6 +66,9 @@ class Order extends Model
         'subtotal',
         'delivery_fee',
         'service_charge',
+        'discount',
+        'promo_id',
+        'promo_name',
         'total_amount',
         'status',
         'estimated_prep_time',
@@ -88,6 +91,7 @@ class Order extends Model
             'subtotal' => 'decimal:2',
             'delivery_fee' => 'decimal:2',
             'service_charge' => 'decimal:2',
+            'discount' => 'decimal:2',
             'total_amount' => 'decimal:2',
             'estimated_prep_time' => 'integer',
             'estimated_delivery_time' => 'datetime',
@@ -126,6 +130,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function promo(): BelongsTo
+    {
+        return $this->belongsTo(Promo::class);
     }
 
     public function cancelRequestedBy(): BelongsTo
