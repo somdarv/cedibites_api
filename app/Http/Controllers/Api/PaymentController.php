@@ -6,13 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\Analytics\AnalyticsService;
 use App\Services\HubtelPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
-    public function __construct(protected HubtelPaymentService $hubtelService) {}
+    public function __construct(
+        protected HubtelPaymentService $hubtelService,
+        protected AnalyticsService $analyticsService,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -54,45 +58,15 @@ class PaymentController extends Controller
      */
     public function stats(Request $request): JsonResponse
     {
-        $query = Payment::query();
+        $filters = array_filter([
+            'branch_id' => $request->input('branch_id'),
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+        ]);
 
-        if ($request->has('branch_id')) {
-            $query->whereHas('order', fn ($q) => $q->where('branch_id', $request->branch_id));
-        }
+        $stats = $this->analyticsService->getPaymentStats($filters);
 
-        if ($request->has('date_from')) {
-            $query->whereDate('payments.created_at', '>=', $request->date_from);
-        }
-
-        if ($request->has('date_to')) {
-            $query->whereDate('payments.created_at', '<=', $request->date_to);
-        }
-
-        $rows = (clone $query)
-            ->selectRaw('payment_status, COUNT(*) as count, SUM(amount) as total')
-            ->groupBy('payment_status')
-            ->get()
-            ->keyBy('payment_status');
-
-        // For no_charge, sum the order total_amount (payment amount is always 0)
-        $noChargeOrderTotal = (clone $query)
-            ->where('payments.payment_status', 'no_charge')
-            ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->sum('orders.total_amount');
-
-        $stat = fn (string $status) => [
-            'count' => (int) ($rows[$status]->count ?? 0),
-            'total' => (float) ($rows[$status]->total ?? 0),
-        ];
-
-        return response()->success([
-            'completed' => $stat('completed'),
-            'pending' => $stat('pending'),
-            'no_charge' => [
-                'count' => (int) ($rows['no_charge']->count ?? 0),
-                'total' => (float) $noChargeOrderTotal,
-            ],
-        ], 'Payment stats retrieved successfully.');
+        return response()->success($stats, 'Payment stats retrieved successfully.');
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Events\OrderBroadcastEvent;
 use App\Models\Employee;
 use App\Models\Order;
+use App\Models\ShiftOrder;
 use App\Notifications\HighValueOrderNotification;
 use App\Notifications\NewOrderNotification;
 use App\Notifications\OrderCancelledNotification;
@@ -105,6 +106,11 @@ class OrderObserver
             ]);
         }
 
+        // Handle cancellation side-effects: auto-refund payment + fix shift counters
+        if ($order->status === 'cancelled') {
+            $this->handleCancellationSideEffects($order);
+        }
+
         OrderBroadcastEvent::dispatch($order, 'updated');
     }
 
@@ -134,5 +140,33 @@ class OrderObserver
             ->first();
 
         $manager?->user?->notify(new HighValueOrderNotification($order));
+    }
+
+    /**
+     * Handle cancellation side-effects: auto-refund completed payments and fix shift counters.
+     */
+    protected function handleCancellationSideEffects(Order $order): void
+    {
+        // Auto-refund: flip completed payments to refunded (skip no_charge — nothing to refund)
+        $order->loadMissing('payments');
+        foreach ($order->payments as $payment) {
+            if ($payment->payment_status === 'completed') {
+                $payment->update([
+                    'payment_status' => 'refunded',
+                    'refunded_at' => now(),
+                ]);
+            }
+        }
+
+        // Fix shift counters: find any ShiftOrder for this order and decrement
+        $shiftOrders = ShiftOrder::where('order_id', $order->id)->with('shift')->get();
+        foreach ($shiftOrders as $shiftOrder) {
+            $shift = $shiftOrder->shift;
+            if ($shift) {
+                $shift->decrement('total_sales', (float) $shiftOrder->order_total);
+                $shift->decrement('order_count');
+            }
+            $shiftOrder->delete();
+        }
     }
 }

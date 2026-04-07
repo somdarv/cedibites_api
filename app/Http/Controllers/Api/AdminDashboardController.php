@@ -5,57 +5,41 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Order;
+use App\Services\Analytics\AnalyticsQueryBuilder;
+use App\Services\Analytics\AnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AdminDashboardController extends Controller
 {
+    public function __construct(
+        protected AnalyticsService $analyticsService,
+    ) {}
+
     /**
      * Get admin dashboard data: KPIs, branch stats, live orders.
      */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $today = now()->startOfDay();
-        $activeStatuses = ['received', 'confirmed', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'];
 
-        $todayOrders = Order::paymentConfirmed()->whereDate('created_at', $today);
-        $cancelledToday = (clone $todayOrders)->where('status', 'cancelled');
-        $noChargeToday = (clone $todayOrders)->whereHas('payments', fn ($q) => $q->where('payment_status', 'no_charge'));
-        $activeNow = Order::paymentConfirmed()->whereIn('status', $activeStatuses);
+        $kpis = $this->analyticsService->getDashboardMetrics();
 
-        // Revenue = sum of all paid (non-no_charge, non-cancelled) orders placed today.
-        $revenueToday = round(
-            (clone $todayOrders)
-                ->where('status', '!=', 'cancelled')
-                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
-                ->sum('total_amount'),
-            2
-        );
-        $ordersToday = $todayOrders->count();
-        $activeOrders = $activeNow->count();
-        $cancelledTodayCount = $cancelledToday->count();
-        $cancelledRevenueToday = round((clone $cancelledToday)->sum('total_amount'), 2);
-
-        $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) use ($today) {
-            $branchTodayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today);
-            $branchTodayRevenue = (clone $branchTodayOrders)
-                ->where('status', '!=', 'cancelled')
-                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
-                ->sum('total_amount');
+        $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) {
+            $stats = $this->analyticsService->getBranchTodayStats($branch->id);
 
             return [
                 'id' => $branch->id,
                 'name' => $branch->name,
                 'status' => 'open',
-                'revenue_today' => round($branchTodayRevenue, 2),
-                'orders_today' => $branchTodayOrders->count(),
+                'revenue_today' => $stats['revenue_today'],
+                'orders_today' => $stats['orders_today'],
             ];
         });
 
         $liveOrders = Order::with(['customer.user', 'branch', 'assignedEmployee.user'])
             ->paymentConfirmed()
-            ->whereIn('status', $activeStatuses)
+            ->whereIn('status', AnalyticsQueryBuilder::ACTIVE_STATUSES)
             ->latest()
             ->limit(10)
             ->get();
@@ -79,15 +63,7 @@ class AdminDashboardController extends Controller
 
         return response()->success([
             'user_name' => $user->name ?? 'Admin',
-            'kpis' => [
-                'revenue_today' => $revenueToday,
-                'orders_today' => $ordersToday,
-                'active_orders' => $activeOrders,
-                'cancelled_today' => $cancelledTodayCount,
-                'cancelled_revenue_today' => $cancelledRevenueToday,
-                'no_charge_today' => $noChargeToday->count(),
-                'no_charge_today_amount' => round($noChargeToday->sum('total_amount'), 2),
-            ],
+            'kpis' => $kpis,
             'branches' => $branches,
             'live_orders' => $liveOrdersFormatted,
         ], 'Dashboard data retrieved successfully.');
