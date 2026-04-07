@@ -25,8 +25,13 @@ class AdminDashboardController extends Controller
 
         $kpis = $this->analyticsService->getDashboardMetrics();
 
-        $branches = Branch::where('is_active', true)->get()->map(function (Branch $branch) {
-            $stats = $this->analyticsService->getBranchTodayStats($branch->id);
+        $activeBranches = Branch::where('is_active', true)->get();
+        $branchStats = $this->analyticsService->getBranchTodayStatsBulk(
+            $activeBranches->pluck('id')->all()
+        );
+
+        $branches = $activeBranches->map(function (Branch $branch) use ($branchStats) {
+            $stats = $branchStats[$branch->id] ?? ['revenue_today' => 0, 'orders_today' => 0];
 
             return [
                 'id' => $branch->id,
@@ -36,7 +41,6 @@ class AdminDashboardController extends Controller
                 'orders_today' => $stats['orders_today'],
             ];
         });
-
         $liveOrders = Order::with(['customer.user', 'branch', 'assignedEmployee.user'])
             ->paymentConfirmed()
             ->whereIn('status', AnalyticsQueryBuilder::ACTIVE_STATUSES)

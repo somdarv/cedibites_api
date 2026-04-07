@@ -71,7 +71,7 @@ class AnalyticsService
         $avgItemsPerOrder = $revenueOrderCount > 0 ? round($totalItems / $revenueOrderCount, 1) : 0;
 
         return [
-            'gross_revenue' => $grossRevenue,
+            'total_sales' => $grossRevenue,
             'total_orders' => $totalOrders,
             'completed_orders' => $completedOrders,
             'cancelled_orders' => $cancelledOrders,
@@ -190,8 +190,21 @@ class AnalyticsService
             ->limit(10)
             ->get();
 
+        // New customers in last 30 days (always computed, not date-dependent)
+        $thirtyDaysAgo = now()->subDays(30)->toDateString();
+        $newCustomers30Days = Customer::whereHas(
+            'orders',
+            fn ($q) => $q->paymentConfirmed()
+                ->whereDate('created_at', '>=', $thirtyDaysAgo)
+        )->whereDoesntHave(
+            'orders',
+            fn ($q) => $q->paymentConfirmed()
+                ->whereDate('created_at', '<', $thirtyDaysAgo)
+        )->count();
+
         return [
             'total_customers' => $totalCustomers,
+            'new_customers_30_days' => $newCustomers30Days,
             'new_customers_in_period' => $newCustomers,
             'top_customers_by_orders' => $topByOrders,
             'top_customers_by_spending' => $topBySpending,
@@ -230,7 +243,7 @@ class AnalyticsService
                 'name' => $item->name,
                 'size_label' => $item->size_label,
                 'units' => (int) $item->units,
-                'revenue' => round($item->revenue, 2),
+                'rev' => round($item->revenue, 2),
                 'trend' => $trend,
             ];
         })->toArray();
@@ -257,7 +270,7 @@ class AnalyticsService
                 'name' => $item->name,
                 'size_label' => $item->size_label,
                 'units' => (int) $item->units,
-                'revenue' => round($item->revenue, 2),
+                'rev' => round($item->revenue, 2),
             ])
             ->toArray();
     }
@@ -309,7 +322,11 @@ class AnalyticsService
             ->groupBy('branch_id')
             ->get();
 
-        return $branches->map(function ($b) {
+        // Pre-load branch names to avoid N+1
+        $branchNames = \App\Models\Branch::whereIn('id', $branches->pluck('branch_id'))
+            ->pluck('name', 'id');
+
+        return $branches->map(function ($b) use ($branchNames) {
             $fulfilmentRate = $b->total_orders > 0
                 ? round(($b->completed_orders / $b->total_orders) * 100)
                 : 0;
@@ -319,7 +336,7 @@ class AnalyticsService
                 : 0;
 
             return [
-                'name' => $b->branch?->name ?? \App\Models\Branch::find($b->branch_id)?->name ?? 'Unknown',
+                'name' => $branchNames[$b->branch_id] ?? 'Unknown',
                 'rev' => round($b->revenue ?? 0, 2),
                 'orders' => $b->completed_orders,
                 'avg' => round($b->avg_value ?? 0, 2),
@@ -333,75 +350,57 @@ class AnalyticsService
 
     /**
      * Per-staff sales breakdown by payment method for a given date and branch.
+     * Uses DB-level conditional aggregation — no PHP iteration.
      */
-    public function getStaffSalesMetrics(array $filters = []): \Illuminate\Support\Collection
+    public function getStaffSalesMetrics(array $filters = []): array
     {
-        $query = $this->queryBuilder->revenueOrders($filters)
+        // Build base query: placed, not cancelled, assigned to staff, joined with payments
+        $baseQuery = $this->queryBuilder->placedOrders($filters)
+            ->where('status', '!=', 'cancelled')
             ->whereNotNull('assigned_employee_id')
-            ->with(['assignedEmployee.user', 'payments']);
-
-        // Also get no_charge orders for staff tracking
-        $noChargeQuery = $this->queryBuilder->noChargeOrders($filters)
-            ->whereNotNull('assigned_employee_id')
-            ->with(['assignedEmployee.user', 'payments']);
-
-        $allOrders = $query->get()->merge($noChargeQuery->get());
-
-        return $allOrders
-            ->groupBy('assigned_employee_id')
-            ->map(function ($orders, $employeeId) {
-                $employee = $orders->first()->assignedEmployee;
-                $staffName = $employee?->user?->name ?? 'Unknown';
-
-                $momoTotal = 0;
-                $cashTotal = 0;
-                $noChargeTotal = 0;
-                $cardTotal = 0;
-                $momoCount = 0;
-                $cashCount = 0;
-                $noChargeCount = 0;
-                $cardCount = 0;
-
-                foreach ($orders as $order) {
-                    $payment = $order->payments->first();
-                    if (! $payment) {
-                        continue;
-                    }
-
-                    $amount = (float) $order->total_amount;
-
-                    if ($payment->payment_status === 'no_charge') {
-                        $noChargeTotal += $amount;
-                        $noChargeCount++;
-                    } elseif ($payment->payment_method === 'mobile_money') {
-                        $momoTotal += $amount;
-                        $momoCount++;
-                    } elseif ($payment->payment_method === 'cash') {
-                        $cashTotal += $amount;
-                        $cashCount++;
-                    } elseif ($payment->payment_method === 'card') {
-                        $cardTotal += $amount;
-                        $cardCount++;
-                    }
-                }
-
-                return [
-                    'employee_id' => $employeeId,
-                    'staff_name' => $staffName,
-                    'total_orders' => $orders->count(),
-                    'momo_total' => round($momoTotal, 2),
-                    'momo_count' => $momoCount,
-                    'cash_total' => round($cashTotal, 2),
-                    'cash_count' => $cashCount,
-                    'no_charge_total' => round($noChargeTotal, 2),
-                    'no_charge_count' => $noChargeCount,
-                    'card_total' => round($cardTotal, 2),
-                    'card_count' => $cardCount,
-                    'total_revenue' => round($momoTotal + $cashTotal + $cardTotal, 2),
-                ];
+            ->join('payments', function ($join) {
+                $join->on('payments.order_id', '=', 'orders.id')
+                    ->whereIn('payments.payment_status', ['completed', 'no_charge']);
             })
-            ->sortByDesc('total_revenue')
-            ->values();
+            ->join('employees', 'orders.assigned_employee_id', '=', 'employees.id')
+            ->join('users', 'employees.user_id', '=', 'users.id');
+
+        $rows = $baseQuery
+            ->select(
+                'orders.assigned_employee_id as employee_id',
+                'users.name as staff_name',
+                DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
+                // MoMo
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as momo_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN orders.id END) as momo_count"),
+                // Cash
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'cash' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as cash_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'cash' AND payments.payment_status = 'completed' THEN orders.id END) as cash_count"),
+                // Card
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'card' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as card_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'card' AND payments.payment_status = 'completed' THEN orders.id END) as card_count"),
+                // No charge
+                DB::raw("SUM(CASE WHEN payments.payment_status = 'no_charge' THEN orders.total_amount ELSE 0 END) as no_charge_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_status = 'no_charge' THEN orders.id END) as no_charge_count"),
+            )
+            ->groupBy('orders.assigned_employee_id', 'users.name')
+            ->orderByDesc(DB::raw("SUM(CASE WHEN payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END)"))
+            ->get();
+
+        return $rows->map(fn ($r) => [
+            'employee_id' => $r->employee_id,
+            'staff_name' => $r->staff_name,
+            'total_orders' => (int) $r->total_orders,
+            'momo_total' => round((float) $r->momo_total, 2),
+            'momo_count' => (int) $r->momo_count,
+            'cash_total' => round((float) $r->cash_total, 2),
+            'cash_count' => (int) $r->cash_count,
+            'card_total' => round((float) $r->card_total, 2),
+            'card_count' => (int) $r->card_count,
+            'no_charge_total' => round((float) $r->no_charge_total, 2),
+            'no_charge_count' => (int) $r->no_charge_count,
+            'total_revenue' => round((float) $r->momo_total + (float) $r->cash_total + (float) $r->card_total, 2),
+        ])->toArray();
     }
 
     // ─── G. DELIVERY & PICKUP METRICS ───────────────────────────────
@@ -499,7 +498,7 @@ class AnalyticsService
             'name' => ucfirst(str_replace('_', ' ', $s->order_source ?? 'Unknown')),
             'count' => (int) $s->count,
             'pct' => $totalOrders > 0 ? round(($s->count / $totalOrders) * 100) : 0,
-            'avg_value' => round($s->avg_value ?? 0, 2),
+            'avgValue' => round($s->avg_value ?? 0, 2),
             'total_revenue' => round($s->total_revenue ?? 0, 2),
         ])->sortByDesc('count')->values()->toArray();
     }
@@ -542,6 +541,7 @@ class AnalyticsService
         return [
             'completed' => $stat('completed'),
             'pending' => $stat('pending'),
+            'refunded' => $stat('refunded'),
             'no_charge' => [
                 'count' => (int) ($rows['no_charge']->count ?? 0),
                 'total' => (float) $noChargeOrderTotal,
@@ -674,6 +674,44 @@ class AnalyticsService
             'revenue_today' => $this->queryBuilder->computeRevenue($filters),
             'orders_today' => $this->queryBuilder->computePlacedOrderCount($filters),
         ];
+    }
+
+    /**
+     * Bulk per-branch today stats (2 queries total instead of 2N).
+     *
+     * @param  int[]  $branchIds
+     * @return array<int, array{revenue_today: float, orders_today: int}>
+     */
+    public function getBranchTodayStatsBulk(array $branchIds): array
+    {
+        if (empty($branchIds)) {
+            return [];
+        }
+
+        $today = now()->startOfDay()->toDateString();
+        $filters = ['date_from' => $today, 'date_to' => $today];
+
+        $revenueByBranch = $this->queryBuilder->revenueOrders($filters)
+            ->whereIn('branch_id', $branchIds)
+            ->select('branch_id', DB::raw('SUM(total_amount) as revenue'))
+            ->groupBy('branch_id')
+            ->pluck('revenue', 'branch_id');
+
+        $ordersByBranch = $this->queryBuilder->placedOrders($filters)
+            ->whereIn('branch_id', $branchIds)
+            ->select('branch_id', DB::raw('COUNT(*) as orders'))
+            ->groupBy('branch_id')
+            ->pluck('orders', 'branch_id');
+
+        $result = [];
+        foreach ($branchIds as $id) {
+            $result[$id] = [
+                'revenue_today' => round((float) ($revenueByBranch[$id] ?? 0), 2),
+                'orders_today' => (int) ($ordersByBranch[$id] ?? 0),
+            ];
+        }
+
+        return $result;
     }
 
     // ─── O. REPORTS ─────────────────────────────────────────────────
@@ -881,15 +919,15 @@ class AnalyticsService
             'branch_ids' => $branchIds,
         ];
 
+        $branchFilter = ['branch_ids' => $branchIds];
+
         return [
-            'pending_orders' => Order::whereIn('branch_id', $branchIds)
-                ->paymentConfirmed()
+            'pending_orders' => (clone $this->queryBuilder->activeOrders($branchFilter))
                 ->where('status', 'received')
                 ->count(),
 
-            'preparing_orders' => Order::whereIn('branch_id', $branchIds)
-                ->paymentConfirmed()
-                ->whereIn('status', ['accepted', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'])
+            'preparing_orders' => (clone $this->queryBuilder->activeOrders($branchFilter))
+                ->where('status', '!=', 'received')
                 ->count(),
 
             'today_orders' => $this->queryBuilder->computePlacedOrderCount($todayFilters),

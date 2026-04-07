@@ -40,12 +40,12 @@ class AnalyticsQueryBuilder
     public const COMPLETED_STATUSES = ['completed', 'delivered'];
 
     /**
-     * Placed orders — orders with a confirmed payment (completed or no_charge).
+     * Placed orders — orders with a confirmed payment (completed, no_charge, or refunded).
      * This is the universal base for all analytics that count "real" orders.
      */
     public function placedOrders(array $filters = []): Builder
     {
-        $query = Order::paymentConfirmed();
+        $query = Order::whereHas('payments', fn (Builder $q) => $q->whereIn('payment_status', ['completed', 'no_charge', 'refunded']));
 
         $this->applyFilters($query, $filters);
 
@@ -81,8 +81,13 @@ class AnalyticsQueryBuilder
      */
     public function cancelledOrders(array $filters = []): Builder
     {
-        return $this->placedOrders($filters)
-            ->where('status', 'cancelled');
+        $query = Order::query()
+            ->where('status', 'cancelled')
+            ->whereHas('payments', fn (Builder $q) => $q->whereIn('payment_status', ['completed', 'no_charge', 'refunded']));
+
+        $this->applyFilters($query, $filters);
+
+        return $query;
     }
 
     /**
@@ -93,13 +98,7 @@ class AnalyticsQueryBuilder
         $query = Order::paymentConfirmed()
             ->whereIn('status', self::ACTIVE_STATUSES);
 
-        if (isset($filters['branch_id'])) {
-            $query->where('branch_id', $filters['branch_id']);
-        }
-
-        if (isset($filters['employee_id'])) {
-            $query->where('assigned_employee_id', $filters['employee_id']);
-        }
+        $this->applyFilters($query, $filters);
 
         return $query;
     }

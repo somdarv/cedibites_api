@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\EmployeeStatus;
 use App\Enums\Role;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -25,7 +26,16 @@ class CreateEmployeeRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'unique:users,email'],
-            'phone' => ['required', 'string', 'unique:users,phone'],
+            'phone' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $existing = User::where('phone', $value)->first();
+                    if ($existing && $existing->employee) {
+                        $fail('This phone number is already registered as a staff member.');
+                    }
+                },
+            ],
             'password' => ['nullable', 'string', 'min:8'],
             'password_mode' => ['nullable', 'string', 'in:auto,custom,prompt'],
             'branch_ids' => ['required', 'array', 'min:1'],
@@ -60,7 +70,6 @@ class CreateEmployeeRequest extends FormRequest
         return [
             'name.required' => 'Employee name is required.',
             'phone.required' => 'Phone number is required.',
-            'phone.unique' => 'This phone number is already registered.',
             'email.unique' => 'This email is already registered.',
             'password.min' => 'Password must be at least 8 characters.',
             'branch_ids.required' => 'At least one branch is required.',

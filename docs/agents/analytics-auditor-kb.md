@@ -41,20 +41,20 @@ Frontend (all portals tap same pipe with different filters)
 
 The canonical query factory. Every analytics computation MUST use these builders.
 
-| Method                               | Returns                                                              | Filters Applied        |
-| ------------------------------------ | -------------------------------------------------------------------- | ---------------------- |
-| `placedOrders($filters)`             | Builder: paymentConfirmed + status != cancelled                      | date, branch, employee |
-| `revenueOrders($filters)`            | Builder: placed + payment_status = completed                         | date, branch, employee |
-| `noChargeOrders($filters)`           | Builder: placed + payment_status = no_charge                         | date, branch, employee |
-| `cancelledOrders($filters)`          | Builder: paymentConfirmed + status = cancelled                       | date, branch, employee |
-| `activeOrders($filters)`             | Builder: paymentConfirmed + ACTIVE_STATUSES                          | date, branch           |
-| `completedOrders($filters)`          | Builder: paymentConfirmed + COMPLETED_STATUSES                       | date, branch, employee |
-| `orderItems($filters)`               | Builder: order_items joined with placed orders                       | date, branch           |
-| `payments($filters)`                 | Builder: payments joined with placed orders                          | date, branch           |
-| `computeRevenue($filters)`           | float: SUM(total_amount) from revenueOrders                          | date, branch, employee |
-| `computePlacedOrderCount($filters)`  | int: COUNT from placedOrders                                         | date, branch, employee |
-| `computeRevenueOrderCount($filters)` | int: COUNT from revenueOrders                                        | date, branch, employee |
-| `applyFilters($query, $filters)`     | void: applies date_from, date_to, branch_id, branch_ids, employee_id | —                      |
+| Method                               | Returns                                                              | Filters Applied                    |
+| ------------------------------------ | -------------------------------------------------------------------- | ---------------------------------- |
+| `placedOrders($filters)`             | Builder: paymentConfirmed + status != cancelled                      | date, branch, employee             |
+| `revenueOrders($filters)`            | Builder: placed + payment_status = completed                         | date, branch, employee             |
+| `noChargeOrders($filters)`           | Builder: placed + payment_status = no_charge                         | date, branch, employee             |
+| `cancelledOrders($filters)`          | Builder: paymentConfirmed + status = cancelled                       | date, branch, employee             |
+| `activeOrders($filters)`             | Builder: paymentConfirmed + ACTIVE_STATUSES                          | date, branch, branch_ids, employee |
+| `completedOrders($filters)`          | Builder: paymentConfirmed + COMPLETED_STATUSES                       | date, branch, employee             |
+| `orderItems($filters)`               | Builder: order_items joined with placed orders                       | date, branch                       |
+| `payments($filters)`                 | Builder: payments joined with placed orders                          | date, branch                       |
+| `computeRevenue($filters)`           | float: SUM(total_amount) from revenueOrders                          | date, branch, employee             |
+| `computePlacedOrderCount($filters)`  | int: COUNT from placedOrders                                         | date, branch, employee             |
+| `computeRevenueOrderCount($filters)` | int: COUNT from revenueOrders                                        | date, branch, employee             |
+| `applyFilters($query, $filters)`     | void: applies date_from, date_to, branch_id, branch_ids, employee_id | —                                  |
 
 Constants: `ACTIVE_STATUSES`, `COMPLETED_STATUSES`
 
@@ -80,7 +80,8 @@ The single source of truth. 19 public methods organized into sections A–S.
 | `getPromoMetrics($filters)`                     | M       | AdminAnalyticsController::promos (NEW)              |
 | `getFunnelMetrics($filters)`                    | N       | AdminAnalyticsController::checkoutFunnel (NEW)      |
 | `getDashboardMetrics($filters)`                 | O       | AdminDashboardController                            |
-| `getBranchTodayStats($branchId)`                | P       | AdminDashboardController, BranchController::index   |
+| `getBranchTodayStats($branchId)`                | P       | BranchController::index                             |
+| `getBranchTodayStatsBulk($branchIds)`           | P       | AdminDashboardController (2 queries total)          |
 | `getDailyReport($date)`                         | Q       | AdminReportController::daily                        |
 | `getMonthlyReport($year, $month)`               | R       | AdminReportController::monthly                      |
 | `getBranchDetailStats($branchId)`               | S       | BranchController::stats                             |
@@ -92,7 +93,7 @@ The single source of truth. 19 public methods organized into sections A–S.
 
 | Controller               | Inline Analytics? | Delegates To                                                                         |
 | ------------------------ | ----------------- | ------------------------------------------------------------------------------------ |
-| AdminDashboardController | ❌ None           | `AnalyticsService::getDashboardMetrics()`, `getBranchTodayStats()`                   |
+| AdminDashboardController | ❌ None           | `AnalyticsService::getDashboardMetrics()`, `getBranchTodayStatsBulk()` (2 queries)   |
 | AdminAnalyticsController | ❌ None           | 13 AnalyticsService methods (10 existing + 3 new)                                    |
 | AdminReportController    | ❌ None           | `AnalyticsService::getDailyReport()`, `getMonthlyReport()`                           |
 | BranchController         | ❌ None           | `AnalyticsService::getBranchTodayStats/DetailStats/TopItems/RevenueChart/StaffSales` |
@@ -275,5 +276,6 @@ _None — all 12 original divergences resolved in the April 7 overhaul._
 
 | Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Author            |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 2026-04-07 | **POST-OVERHAUL AUDIT**: Fixed 4 contract mismatches (field names), N+1 in getBranchMetrics, activeOrders() now uses applyFilters() (adds branch_ids support), getEmployeeBranchStats() now uses queryBuilder for pending/preparing counts, dashboard N+1 eliminated with new getBranchTodayStatsBulk() (2 queries instead of 2N). Tests: 74 pass, 1 pre-existing IAM fail.                                                                                                                   | Analytics Auditor |
 | 2026-04-07 | **OVERHAUL COMPLETE**: Created AnalyticsQueryBuilder + new AnalyticsService. Rewrote AdminDashboardController, AdminAnalyticsController, BranchController (5 methods), PaymentController::stats, OrderManagementService::getBranchStats, AdminReportController. Added auto-refund + shift counter fix in OrderObserver. Added 3 new routes (fulfillment, promos, checkout-funnel). Deleted old AnalyticsService. All 12 divergences resolved. Tests pass (74/74, 1 pre-existing IAM failure). | Analytics Auditor |
 | 2026-04-07 | Created KB. Full initial audit: 12 divergences found, 16 untapped data sources identified, 0 caching, shift counter drift confirmed.                                                                                                                                                                                                                                                                                                                                                          | Analytics Auditor |
