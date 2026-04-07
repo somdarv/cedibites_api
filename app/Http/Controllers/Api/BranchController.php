@@ -12,11 +12,16 @@ use App\Models\Branch;
 use App\Models\Order;
 use App\Notifications\BranchManagerAssignedNotification;
 use App\Notifications\BranchManagerRemovedNotification;
+use App\Services\Analytics\AnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class BranchController extends Controller
 {
+    public function __construct(
+        protected AnalyticsService $analyticsService,
+    ) {}
+
     /**
      * Display a listing of the resource.
      */
@@ -36,19 +41,14 @@ class BranchController extends Controller
             ->when($request->area, fn ($query, $area) => $query->where('area', $area))
             ->get();
 
-        // Add today's stats to each branch
-        $today = now()->startOfDay();
-        $branchesWithStats = $branches->map(function ($branch) use ($today) {
-            $todayOrders = $branch->orders()->paymentConfirmed()->whereDate('created_at', $today)->count();
-            $todayRevenue = $branch->orders()
-                ->whereDate('created_at', $today)
-                ->whereIn('status', ['completed', 'delivered'])
-                ->sum('total_amount');
+        // Add today's stats to each branch — uses canonical revenue definition
+        $branchesWithStats = $branches->map(function ($branch) {
+            $stats = $this->analyticsService->getBranchTodayStats($branch->id);
 
             $resource = new BranchResource($branch);
             $data = $resource->toArray(request());
-            $data['today_orders'] = $todayOrders;
-            $data['today_revenue'] = (float) $todayRevenue;
+            $data['today_orders'] = $stats['orders_today'];
+            $data['today_revenue'] = $stats['revenue_today'];
 
             return $data;
         });
@@ -422,36 +422,7 @@ class BranchController extends Controller
      */
     public function stats(Branch $branch): JsonResponse
     {
-        $today = now()->startOfDay();
-        $thisMonth = now()->startOfMonth();
-
-        $stats = [
-            'total_employees' => $branch->employees()->count(),
-            'active_employees' => $branch->employees()->where('status', 'active')->count(),
-            'total_orders' => $branch->orders()->paymentConfirmed()->count(),
-            'today_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', $today)->count(),
-            'month_orders' => $branch->orders()->paymentConfirmed()->whereDate('created_at', '>=', $thisMonth)->count(),
-            'today_revenue' => (float) $branch->orders()
-                ->paymentConfirmed()
-                ->whereDate('created_at', $today)
-                ->where('status', '!=', 'cancelled')
-                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
-                ->sum('total_amount'),
-            'month_revenue' => (float) $branch->orders()
-                ->paymentConfirmed()
-                ->whereDate('created_at', '>=', $thisMonth)
-                ->where('status', '!=', 'cancelled')
-                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
-                ->sum('total_amount'),
-            'today_cancelled' => $branch->orders()
-                ->whereDate('created_at', $today)
-                ->where('status', 'cancelled')
-                ->count(),
-            'today_cancelled_revenue' => (float) $branch->orders()
-                ->whereDate('created_at', $today)
-                ->where('status', 'cancelled')
-                ->sum('total_amount'),
-        ];
+        $stats = $this->analyticsService->getBranchDetailStats($branch->id);
 
         return response()->success($stats, 'Branch statistics retrieved successfully.');
     }
@@ -461,52 +432,10 @@ class BranchController extends Controller
      */
     public function topItems(Request $request, Branch $branch): JsonResponse
     {
-        $date = $request->get('date', 'today');
-        $limit = $request->get('limit', 5);
+        $period = $request->get('date', 'today');
+        $limit = (int) $request->get('limit', 5);
 
-        $query = $branch->orders()
-            ->with(['items.menuItem'])
-            ->paymentConfirmed()
-            ->where('status', '!=', 'cancelled');
-
-        if ($date === 'today') {
-            $query->whereDate('created_at', now()->startOfDay());
-        } elseif ($date === 'week') {
-            $query->whereDate('created_at', '>=', now()->startOfWeek());
-        } elseif ($date === 'month') {
-            $query->whereDate('created_at', '>=', now()->startOfMonth());
-        }
-
-        $orders = $query->get();
-
-        $itemStats = [];
-        foreach ($orders as $order) {
-            foreach ($order->items as $item) {
-                $menuItem = $item->menuItem;
-                if (! $menuItem) {
-                    continue;
-                }
-
-                $key = $menuItem->id;
-                if (! isset($itemStats[$key])) {
-                    $itemStats[$key] = [
-                        'name' => $menuItem->name,
-                        'sold' => 0,
-                        'revenue' => 0,
-                    ];
-                }
-
-                $itemStats[$key]['sold'] += $item->quantity;
-                $itemStats[$key]['revenue'] += $item->subtotal;
-            }
-        }
-
-        // Sort by quantity sold and take top items
-        $topItems = collect($itemStats)
-            ->sortByDesc('sold')
-            ->take($limit)
-            ->values()
-            ->toArray();
+        $topItems = $this->analyticsService->getBranchTopItems($branch->id, $period, $limit);
 
         return response()->success($topItems, 'Top items retrieved successfully.');
     }
@@ -518,48 +447,7 @@ class BranchController extends Controller
     {
         $period = $request->get('period', 'week');
 
-        if ($period === 'week') {
-            $startDate = now()->startOfWeek();
-            $endDate = now()->endOfWeek();
-        } else {
-            $startDate = now()->startOfMonth();
-            $endDate = now()->endOfMonth();
-        }
-
-        $dailyRevenue = $branch->orders()
-            ->selectRaw('DATE(created_at) as date, SUM(total_amount) as revenue')
-            ->paymentConfirmed()
-            ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->groupBy('date')
-            ->orderBy('date')
-            ->get()
-            ->keyBy('date');
-
-        // Fill in missing dates with 0 revenue
-        $chartData = [];
-        $currentDate = $startDate->copy();
-
-        while ($currentDate <= $endDate) {
-            $dateStr = $currentDate->format('Y-m-d');
-            $revenue = $dailyRevenue->get($dateStr)?->revenue ?? 0;
-
-            $chartData[] = [
-                'date' => $dateStr,
-                'day' => $currentDate->format('D'), // Mon, Tue, etc.
-                'revenue' => (float) $revenue,
-            ];
-
-            $currentDate->addDay();
-        }
-
-        // Calculate percentages for chart display
-        $maxRevenue = collect($chartData)->max('revenue');
-        if ($maxRevenue > 0) {
-            foreach ($chartData as &$data) {
-                $data['percentage'] = round(($data['revenue'] / $maxRevenue) * 100);
-            }
-        }
+        $chartData = $this->analyticsService->getBranchRevenueChart($branch->id, $period);
 
         return response()->success($chartData, 'Revenue chart data retrieved successfully.');
     }
@@ -648,61 +536,11 @@ class BranchController extends Controller
     {
         $date = $request->input('date', now()->toDateString());
 
-        $rows = Order::query()
-            ->where('branch_id', $branch->id)
-            ->whereDate('created_at', $date)
-            ->where('status', '!=', 'cancelled')
-            ->whereNotNull('assigned_employee_id')
-            ->with(['assignedEmployee.user', 'payments'])
-            ->get()
-            ->groupBy('assigned_employee_id')
-            ->map(function ($orders, $employeeId) {
-                $employee = $orders->first()->assignedEmployee;
-                $staffName = $employee?->user?->name ?? 'Unknown';
-
-                $momoTotal = 0; $cashTotal = 0; $noChargeTotal = 0; $cardTotal = 0;
-                $momoCount = 0; $cashCount = 0; $noChargeCount = 0; $cardCount = 0;
-
-                foreach ($orders as $order) {
-                    $payment = $order->payments->first();
-                    if (! $payment) {
-                        continue;
-                    }
-
-                    $amount = (float) $order->total_amount;
-
-                    if ($payment->payment_status === 'no_charge') {
-                        $noChargeTotal += $amount;
-                        $noChargeCount++;
-                    } elseif ($payment->payment_method === 'mobile_money') {
-                        $momoTotal += $amount;
-                        $momoCount++;
-                    } elseif ($payment->payment_method === 'cash') {
-                        $cashTotal += $amount;
-                        $cashCount++;
-                    } elseif ($payment->payment_method === 'card') {
-                        $cardTotal += $amount;
-                        $cardCount++;
-                    }
-                }
-
-                return [
-                    'employee_id' => $employeeId,
-                    'staff_name' => $staffName,
-                    'total_orders' => $orders->count(),
-                    'momo_total' => round($momoTotal, 2),
-                    'momo_count' => $momoCount,
-                    'cash_total' => round($cashTotal, 2),
-                    'cash_count' => $cashCount,
-                    'no_charge_total' => round($noChargeTotal, 2),
-                    'no_charge_count' => $noChargeCount,
-                    'card_total' => round($cardTotal, 2),
-                    'card_count' => $cardCount,
-                    'total_revenue' => round($momoTotal + $cashTotal + $cardTotal, 2),
-                ];
-            })
-            ->sortByDesc('total_revenue')
-            ->values();
+        $rows = $this->analyticsService->getStaffSalesMetrics([
+            'branch_id' => $branch->id,
+            'start_date' => $date,
+            'end_date' => $date,
+        ]);
 
         return response()->success($rows);
     }

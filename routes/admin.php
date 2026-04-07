@@ -138,6 +138,9 @@ Route::prefix('admin')->group(function () {
             Route::get('branch-performance', [AdminAnalyticsController::class, 'branchPerformance']);
             Route::get('delivery-pickup', [AdminAnalyticsController::class, 'deliveryPickup']);
             Route::get('payment-methods', [AdminAnalyticsController::class, 'paymentMethods']);
+            Route::get('fulfillment', [AdminAnalyticsController::class, 'fulfillment']);
+            Route::get('promos', [AdminAnalyticsController::class, 'promos']);
+            Route::get('checkout-funnel', [AdminAnalyticsController::class, 'checkoutFunnel']);
         });
 
         Route::prefix('reports')->group(function () {
