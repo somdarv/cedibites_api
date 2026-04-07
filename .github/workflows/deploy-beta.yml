@@ -27,9 +27,11 @@ jobs:
             cd /var/www/beta/laravel/cedibites_api
             # If triggered by production deploy, pull master; otherwise pull beta branch
             if [ "${{ github.event_name }}" = "workflow_run" ]; then
-              git pull origin master
+              git fetch origin master
+              git reset --hard origin/master
             else
-              git pull origin beta
+              git fetch origin beta
+              git reset --hard origin/beta
             fi
             composer install --no-dev --optimize-autoloader
             php artisan config:clear
