@@ -23,5 +23,9 @@ jobs:
             php artisan migrate --force
             php artisan cache:clear
             php artisan route:clear
+            rm -f bootstrap/cache/routes-v7.php
             php artisan view:clear
+            php artisan event:clear
             sudo systemctl reload php8.4-fpm
+            echo "--- Deploy verification ---"
+            php artisan route:list --path=pos/checkout-sessions --json 2>&1 | head -c 200
