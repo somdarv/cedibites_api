@@ -23,6 +23,9 @@ class AuthUserResource extends JsonResource
             'customer' => $this->customer ? [
                 'id' => $this->customer->id,
                 'is_guest' => $this->customer->is_guest,
+                'status' => $this->customer->status instanceof \App\Enums\CustomerStatus
+                    ? $this->customer->status->value
+                    : ($this->customer->status ?? 'active'),
             ] : null,
             'roles' => $this->roles->pluck('name'),
             'permissions' => $this->getAllPermissions()->pluck('name'),

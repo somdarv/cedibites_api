@@ -27,6 +27,7 @@ class CreateEmployeeRequest extends FormRequest
             'email' => ['nullable', 'email', 'unique:users,email'],
             'phone' => ['required', 'string', 'unique:users,phone'],
             'password' => ['nullable', 'string', 'min:8'],
+            'password_mode' => ['nullable', 'string', 'in:auto,custom,prompt'],
             'branch_ids' => ['required', 'array', 'min:1'],
             'branch_ids.*' => ['required', 'integer', 'exists:branches,id'],
             'role' => ['required', Rule::enum(Role::class)],

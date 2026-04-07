@@ -59,10 +59,15 @@ class OTPService
     }
 
     /**
-     * Cleanup expired OTPs.
+     * Cleanup expired and old verified OTPs.
      */
     public function cleanup(): int
     {
-        return Otp::where('expires_at', '<', now())->delete();
+        return Otp::where('expires_at', '<', now())
+            ->orWhere(function ($query) {
+                $query->where('verified', true)
+                    ->where('created_at', '<', now()->subHour());
+            })
+            ->delete();
     }
 }

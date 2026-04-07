@@ -49,7 +49,7 @@ class RoleController extends Controller
     private function formatRoleDisplayName(string $roleName): string
     {
         $displayNames = [
-            'super_admin' => 'Super Admin',
+            'tech_admin' => 'Tech Admin',
             'admin' => 'Admin',
             'branch_partner' => 'Branch Partner',
             'manager' => 'Branch Manager',
@@ -57,7 +57,6 @@ class RoleController extends Controller
             'sales_staff' => 'Sales Staff',
             'kitchen' => 'Kitchen Staff',
             'rider' => 'Delivery Rider',
-            'employee' => 'Employee',
         ];
 
         return $displayNames[$roleName] ?? ucwords(str_replace('_', ' ', $roleName));

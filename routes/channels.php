@@ -7,7 +7,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('orders.branch.{branchId}', function ($user, $branchId) {
-    if ($user->hasAnyRole(['admin', 'super_admin'])) {
+    if ($user->hasAnyRole(['admin', 'tech_admin'])) {
         return true;
     }
 

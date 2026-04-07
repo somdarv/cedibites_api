@@ -42,10 +42,20 @@ class EmployeeAuthController extends Controller
         if (! Auth::attempt([$field => $value, 'password' => $password])) {
             if ($field === 'phone' && $value !== $identifier) {
                 if (! Auth::attempt(['phone' => $identifier, 'password' => $password])) {
-                    return response()->unauthorized();
+                    activity('auth')
+                        ->withProperties(['identifier' => $identifier, 'ip' => $request->ip()])
+                        ->event('staff_login_failed')
+                        ->log("Failed staff login attempt for: {$identifier}");
+
+                    return response()->unauthorized('The credentials you entered are incorrect. Please try again.', 'invalid_credentials');
                 }
             } else {
-                return response()->unauthorized();
+                activity('auth')
+                    ->withProperties(['identifier' => $identifier, 'ip' => $request->ip()])
+                    ->event('staff_login_failed')
+                    ->log("Failed staff login attempt for: {$identifier}");
+
+                return response()->unauthorized('The credentials you entered are incorrect. Please try again.', 'invalid_credentials');
             }
         }
 
@@ -60,7 +70,7 @@ class EmployeeAuthController extends Controller
         if ($user->employee->status !== EmployeeStatus::Active) {
             Auth::logout();
 
-            return response()->forbidden('Employee account is inactive');
+            return response()->forbidden('Your account is currently '.$user->employee->status->value.'. Please contact your administrator.');
         }
 
         $token = $user->createToken('employee-auth-token')->plainTextToken;
@@ -106,6 +116,7 @@ class EmployeeAuthController extends Controller
 
         $user->update([
             'password' => Hash::make($request->password),
+            'recoverable_password' => $request->password,
             'must_reset_password' => false,
             'password_reset_required_at' => null,
         ]);
@@ -192,6 +203,7 @@ class EmployeeAuthController extends Controller
 
         $user->update([
             'password' => Hash::make($request->string('password')),
+            'recoverable_password' => $request->string('password')->toString(),
             'must_reset_password' => false,
             'password_reset_required_at' => null,
         ]);

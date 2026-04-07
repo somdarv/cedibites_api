@@ -3,6 +3,9 @@
 use App\Http\Controllers\Api\PromoController;
 use Illuminate\Support\Facades\Route;
 
+// Promo resolution — accessible to any authenticated user (POS staff + customers)
+Route::post('promos/resolve', [PromoController::class, 'resolve']);
+
 Route::middleware('permission:manage_menu')->group(function () {
     Route::get('promos', [PromoController::class, 'index']);
     Route::get('promos/{promo}', [PromoController::class, 'show']);

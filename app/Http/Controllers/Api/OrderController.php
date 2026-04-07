@@ -35,11 +35,12 @@ class OrderController extends Controller
     {
         $phone = preg_replace('/\s+/', '', $phone);
         if (str_starts_with($phone, '0')) {
-            return '+233' . substr($phone, 1);
+            return '+233'.substr($phone, 1);
         }
         if (str_starts_with($phone, '233') && ! str_starts_with($phone, '+')) {
-            return '+' . $phone;
+            return '+'.$phone;
         }
+
         return $phone;
     }
 
@@ -99,10 +100,17 @@ class OrderController extends Controller
             $guestPhone = $validated['customer_phone'] ?? null;
             if ($guestPhone) {
                 $normalizedPhone = $this->normalizePhone($guestPhone);
+                $guestName = $validated['customer_name'] ?? 'Customer';
                 $guestUser = User::firstOrCreate(
                     ['phone' => $normalizedPhone],
-                    ['name'  => $validated['customer_name'] ?? 'Customer']
+                    ['name' => $guestName]
                 );
+
+                // Keep the display name current when the same phone is used with a different name
+                if ($guestName !== 'Customer' && $guestUser->name !== $guestName && ! $guestUser->wasRecentlyCreated) {
+                    $guestUser->update(['name' => $guestName]);
+                }
+
                 if (! $guestUser->customer) {
                     $guestUser->customer()->create(['is_guest' => true]);
                     $guestUser->load('customer');
@@ -222,10 +230,11 @@ class OrderController extends Controller
 
     /**
      * Display order by order number (public, for guest tracking).
+     * Returns a minimal response without PII for unauthenticated callers.
      */
     public function showByNumber(string $orderNumber): JsonResponse
     {
-        $order = Order::with(['customer.user', 'branch', 'items.menuItem', 'items.menuItemOption.media', 'statusHistory', 'payments'])
+        $order = Order::with(['branch', 'items.menuItem', 'items.menuItemOption.media', 'statusHistory', 'payments'])
             ->where('order_number', $orderNumber)
             ->first();
 
@@ -233,7 +242,29 @@ class OrderController extends Controller
             return response()->error('Order not found.', 404);
         }
 
-        return response()->success(new OrderResource($order));
+        return response()->success([
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'status' => $order->status,
+            'order_type' => $order->order_type,
+            'total_amount' => (float) $order->total_amount,
+            'branch' => [
+                'name' => $order->branch?->name ?? '—',
+            ],
+            'items' => $order->items->map(fn ($item) => [
+                'quantity' => $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+                'subtotal' => (float) $item->subtotal,
+                'menu_item' => [
+                    'name' => $item->menuItem?->name,
+                ],
+            ]),
+            'status_history' => $order->statusHistory->map(fn ($history) => [
+                'status' => $history->status,
+                'changed_at' => $history->changed_at?->toIso8601String(),
+            ]),
+            'created_at' => $order->created_at?->toIso8601String(),
+        ]);
     }
 
     /**
@@ -252,7 +283,7 @@ class OrderController extends Controller
         $user = Auth::guard('sanctum')->user();
         $employee = $user?->employee;
 
-        if ($employee && ! $user->hasAnyRole([Role::Admin, Role::SuperAdmin])) {
+        if ($employee && ! $user->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             $allowed = $employee->branches()->pluck('branches.id');
             $query->whereIn('branch_id', $allowed);
             if ($branchId !== null && $branchId !== '') {

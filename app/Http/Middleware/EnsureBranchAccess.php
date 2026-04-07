@@ -23,7 +23,7 @@ class EnsureBranchAccess
         }
 
         // Super admins and admins bypass branch ownership checks
-        if ($user->hasAnyRole(['super_admin', 'admin'])) {
+        if ($user->hasAnyRole(['tech_admin', 'admin'])) {
             return $next($request);
         }
 

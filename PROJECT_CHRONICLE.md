@@ -22,9 +22,9 @@
 | `routes/promos.php`    | Promo/discount management                   |
 | `routes/channels.php`  | WebSocket/Reverb broadcasting channels      |
 
-### Models (30)
+### Models (31)
 
-**Core**: User, Customer, Employee, Branch, Address
+**Core**: User, Customer, Employee, EmployeeNote, Branch, Address
 **Menu**: MenuItem, MenuCategory, MenuTag, MenuAddOn, MenuItemOption, MenuItemOptionBranchPrice, MenuItemRating, SmartCategorySetting
 **Orders**: Order, OrderItem, OrderStatusHistory, ShiftOrder, CheckoutSession
 **Shopping**: Cart, CartItem
@@ -104,6 +104,396 @@ Items still needing attention.
 
 ---
 
+## [2026-04-07] Session: Promo System End-to-End — Migrations, Checkout Integration, Route Bug Fix
+
+### Intent
+
+Complete the promo system end-to-end after an audit found promos were "infrastructure-complete but customer-disconnected." Admin CRUD worked, but promos never reached customers or POS. This session added promo fields to the order/checkout schema, wired promo resolution into checkout and POS flows, and fixed a missing route that prevented promo resolution from ever working.
+
+### Changes Made
+
+#### Database Migrations
+
+| File                                                                                    | Change                                                                                                             | Reason                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `database/migrations/2026_04_07_003326_add_discount_and_promo_to_orders_table.php`      | **NEW** — Added `discount` decimal(10,2), `promo_id` FK (nullable), `promo_name` string (nullable) to orders table | Orders need to store applied promo and calculated discount |
+| `database/migrations/2026_04_07_003331_add_promo_fields_to_checkout_sessions_table.php` | **NEW** — Added `promo_id` FK (nullable), `promo_name` string (nullable) to checkout_sessions table                | Checkout session carries promo data to order creation      |
+
+#### Model & Service Updates
+
+| File                                    | Change                                                                                                                                    | Reason                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `app/Models/Order.php`                  | Added `discount`, `promo_id`, `promo_name` to `$fillable`; added `decimal:2` cast for `discount`; added `promo(): BelongsTo` relationship | Order ↔ Promo relationship and proper data handling          |
+| `app/Models/CheckoutSession.php`        | Added `promo_id`, `promo_name` to `$fillable`                                                                                             | Checkout session stores resolved promo                       |
+| `app/Services/OrderCreationService.php` | Now copies `discount`, `promo_id`, `promo_name` from checkout session → order during creation                                             | Promo data flows through the payment-first checkout pipeline |
+
+#### Controller & Resource Updates
+
+| File                                                     | Change                                                                                                                                                            | Reason                                                                |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/CheckoutSessionController.php` | `store()` auto-resolves best promo via `PromoResolutionService` and calculates discount; `posStore()` does server-side promo validation when `promo_id` is passed | Customer checkout gets auto-promo; POS gets explicit promo validation |
+| `app/Http/Resources/OrderResource.php`                   | Added `discount`, `promo_id`, `promo_name` to serialized output                                                                                                   | Frontend needs promo data for display                                 |
+
+#### Route Bug Fix (Critical)
+
+| File                | Change                                                                                                                               | Reason                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes/promos.php` | Added `Route::post('promos/resolve', [PromoController::class, 'resolve'])` **outside** the `permission:manage_menu` middleware group | **BUG FIX**: Route was never registered! `PromoController@resolve`, `ResolvePromoRequest`, `PromoResolutionService`, and frontend `ApiPromoService.resolvePromo()` all existed — but the route binding was missing. POS `useEffect` called the API, got 404, `.catch()` silently set `activePromo=null`. Placed outside `manage_menu` gate so any authenticated user can resolve. |
+
+### Decisions
+
+- **Decision**: Promo resolve route placed outside `manage_menu` permission gate
+    - **Rationale**: Both POS staff and customers need to resolve promos — `manage_menu` is for admin CRUD operations only
+- **Decision**: `PromoResolutionService` returns the promo with highest calculated discount when multiple apply
+    - **Rationale**: Best-value-for-customer approach; simpler than presenting a promo picker
+- **Decision**: `posStore()` does server-side promo validation (re-resolves and compares); `store()` auto-resolves
+    - **Rationale**: POS sends `promo_id` explicitly (staff sees the promo first); customer checkout auto-applies the best one
+- **Decision**: `discount` stored as `decimal(10,2)` on orders table
+    - **Rationale**: Monetary precision; matches `total` and other monetary columns
+- **Decision**: 2 active test promos seeded: "10% off orders over ₵100" (min_order_value=100) and "20% off for new customers" (global, no minimum)
+    - **Note**: The "20% off for new customers" promo currently applies to ALL users — no customer-specific filtering logic implemented yet
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                    | Change                                                                                                                                                   | Triggered By                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `types/api.ts`                          | Added `promo_id?`, `promo_name?` to Order interface                                                                                                      | OrderResource now serializes promo fields  |
+| `lib/api/adapters/order.adapter.ts`     | Maps `promo_name → promoCode`                                                                                                                            | Adapter alignment with new API response    |
+| `app/(customer)/checkout/page.tsx`      | Auto-resolves promo, shows green discount row with TagIcon                                                                                               | Checkout promo integration                 |
+| `app/components/order/OrderDetails.tsx` | Discount + service charge display                                                                                                                        | Order detail promo display                 |
+| `app/pos/terminal/page.tsx`             | Fixed: passes `cartTotal` to `resolvePromo()` (was `undefined` → subtotal=0 → ₵0.00 discount); rewrote total section to show Subtotal → Discount → Total | POS subtotal bug fix + display enhancement |
+| `app/staff/new-order/context.tsx`       | Same subtotal bug fix — compute subtotal before resolve call                                                                                             | Staff new-order promo fix                  |
+
+### Current State
+
+- **Promo schema**: `orders` table has `discount`, `promo_id`, `promo_name`; `checkout_sessions` table has `promo_id`, `promo_name`
+- **Promo flow**: End-to-end working — `PromoResolutionService` resolves → CheckoutSession stores → `OrderCreationService` copies to Order → `OrderResource` serializes
+- **Route**: `POST /v1/promos/resolve` now registered and accessible to any authenticated user
+- **Models**: Order has `promo()` BelongsTo relationship
+- **Migrations**: Created, need to be run in production
+- **Pint**: Clean
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migrations `2026_04_07_003326_*` and `2026_04_07_003331_*` in production
+- "New customers" promo needs actual customer-filtering logic in `PromoResolutionService` if intended to be customer-specific
+- Menu item promo badges (frontend wants "badge better than strikethrough" — deferred due to architectural complexity)
+- `PromoBanner.tsx` on frontend still uses hardcoded data
+- Consider adding promo usage tracking (how many times a promo was applied, total discount given)
+
+---
+
+## [2026-04-07] Session: Role Restructuring — `platform_admin` → `tech_admin`, Removed `super_admin`
+
+### Intent
+
+Simplify the role hierarchy by renaming `platform_admin` to `tech_admin` (IT personnel with full system access) and merging `super_admin` into `admin` (business owner role). The previous hierarchy had overlapping roles — `platform_admin` and `super_admin` had near-identical permissions, and `admin` was redundant with `super_admin`.
+
+### Changes Made
+
+| File                                                                                                   | Change                                                                                                                                                                                                                                                                               | Reason                                                       |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `app/Enums/Role.php`                                                                                   | Renamed `PlatformAdmin` → `TechAdmin` (value: `tech_admin`), removed `SuperAdmin` case. Enum now has 8 roles.                                                                                                                                                                        | Clear IT vs business separation                              |
+| `database/seeders/RoleSeeder.php`                                                                      | Restructured permission assignments: `tech_admin` gets ALL permissions; `admin` loses 8 platform-specific permissions (`access_platform_admin`, `view_system_health`, `view_error_logs`, `manage_roles`, `reset_passwords`, `manage_platform`, `manage_cache`, `toggle_maintenance`) | Clean separation — business owners don't need platform tools |
+| `database/migrations/2026_04_07_002415_rename_platform_admin_to_tech_admin_and_remove_super_admin.php` | **NEW** — Renames `platform_admin` role to `tech_admin` in DB, reassigns `super_admin` users to `admin`, cleans up `super_admin` permission entries, deletes `super_admin` role record                                                                                               | Safe data migration for existing users and permissions       |
+| `routes/platform.php`                                                                                  | Updated role references from `platform_admin` to `tech_admin`                                                                                                                                                                                                                        | Route middleware alignment                                   |
+| `routes/admin.php`                                                                                     | Updated role references — replaced `super_admin` with `admin` or `tech_admin` as appropriate                                                                                                                                                                                         | Route access control alignment                               |
+| `routes/channels.php`                                                                                  | Updated broadcasting channel role checks                                                                                                                                                                                                                                             | WebSocket auth alignment                                     |
+| `app/Http/Controllers/Api/Admin/PlatformController.php`                                                | Updated role/permission checks from `platform_admin` to `tech_admin`                                                                                                                                                                                                                 | Controller authorization                                     |
+| `app/Http/Controllers/Api/RoleController.php`                                                          | Updated display name map and role references                                                                                                                                                                                                                                         | Role listing endpoint                                        |
+| `app/Http/Controllers/Api/ShiftController.php`                                                         | Updated role references                                                                                                                                                                                                                                                              | Shift management access                                      |
+| `app/Http/Controllers/Api/EmployeeOrderController.php`                                                 | Updated role references                                                                                                                                                                                                                                                              | Employee order access                                        |
+| `app/Http/Controllers/Api/CheckoutSessionController.php`                                               | Updated role references                                                                                                                                                                                                                                                              | Checkout session access                                      |
+| `app/Http/Controllers/Api/OrderController.php`                                                         | Updated role references                                                                                                                                                                                                                                                              | Order management access                                      |
+| `app/Http/Controllers/Api/PosOrderController.php`                                                      | Updated role references                                                                                                                                                                                                                                                              | POS order access                                             |
+| `app/Http/Middleware/EnsureBranchAccess.php`                                                           | Updated role checks from `super_admin`/`platform_admin` to `tech_admin`/`admin`                                                                                                                                                                                                      | Middleware authorization                                     |
+| `app/Services/OrderManagementService.php`                                                              | Updated role references for order management permissions                                                                                                                                                                                                                             | Service-level authorization                                  |
+
+### Decisions
+
+- **Decision**: Named the role `tech_admin` over alternatives (`system_admin`, `it_admin`)
+    - **Alternatives**: `system_admin` (too generic), `it_admin` (less professional)
+    - **Rationale**: Concise, clear, immediately communicates "technical/IT personnel"
+- **Decision**: `admin` keeps full business permissions but loses 8 platform-specific permissions
+    - **Rationale**: Clean separation of concerns — business owners manage the business, IT manages the platform. No business scenario requires an admin to toggle maintenance mode or manage cache.
+- **Decision**: `tech_admin` gets ALL permissions (replaces what `super_admin` had)
+    - **Rationale**: IT personnel need unrestricted access for support, debugging, and platform operations
+- **Decision**: Merged `super_admin` into `admin` rather than into `tech_admin`
+    - **Rationale**: Most `super_admin` users were business owners, not IT. They map naturally to the `admin` role.
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                             | Change                                                                           | Triggered By                  |
+| ------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
+| `types/staff.ts`                                 | `StaffRole` type updated: `platform_admin` → `tech_admin`, `super_admin` removed | Role enum changes             |
+| `types/order.ts`                                 | `StaffRole` re-export updated                                                    | Role type alignment           |
+| `lib/api/services/employee.service.ts`           | Role mapping simplified to 1:1 (no more collapsing `admin` → `super_admin`)      | Role hierarchy simplification |
+| `app/components/providers/StaffAuthProvider.tsx` | Role routing updated for new role names                                          | Auth flow alignment           |
+| 7 page/layout files                              | Role checks updated across admin, POS, order-manager, and staff portals          | Authorization UI alignment    |
+
+### Current State
+
+- **Role enum**: 8 roles — `tech_admin`, `admin`, `branch_manager`, `kitchen_staff`, `sales_staff`, `delivery_staff`, `cashier`, `pos_operator`
+- **`tech_admin`**: Full system access (ALL permissions) — for IT personnel
+- **`admin`**: Full business access minus 8 platform permissions — for business owners
+- **`super_admin`**: Completely removed from the system
+- **`platform_admin`**: Renamed to `tech_admin` — no longer exists
+- **Migration**: Created, needs to be run in production
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_07_002415_rename_platform_admin_to_tech_admin_and_remove_super_admin.php` in production
+- Verify no stale `super_admin` or `platform_admin` references remain in codebase
+- Update any external documentation or API docs referencing old role names
+- Monitor for auth issues after migration — users previously on `super_admin` will now be `admin`
+
+---
+
+## [2026-04-06] Session: Temporary Password Simplification + Employee Notes API
+
+### Intent
+
+Replace complex auto-generated staff passwords with human-friendly ones. Build a backend API for employee notes so staff notes persist across devices and sessions (replacing frontend localStorage).
+
+### Changes Made
+
+#### Temporary Password Simplification
+
+| File                                              | Change                                                                                                                                                                                                                                      | Reason                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/EmployeeController.php` | Replaced `Str::password(12)` with new `generateSimplePassword()` private method — produces passwords like "HappyBlue42!" (adjective + noun + 2-3 digits + special char from pool of 15 adjectives × 15 nouns). Removed unused `Str` import. | Old generated passwords were too complex for staff to remember/type |
+
+#### Employee Notes API
+
+| File                                                                    | Change                                                                                                                                           | Reason                                                           |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `database/migrations/2026_04_06_113513_create_employee_notes_table.php` | **NEW** — Creates `employee_notes` table: employee_id (FK), author_id (FK→users), content (text), timestamps, index on [employee_id, created_at] | Persistent storage for staff notes with author tracking          |
+| `app/Models/EmployeeNote.php`                                           | **NEW** — Model with fillable=[employee_id, author_id, content], belongsTo Employee + User (author)                                              | Data model for employee notes                                    |
+| `app/Models/Employee.php`                                               | Added `notes(): HasMany` relationship                                                                                                            | Employee → notes relationship for eager loading and querying     |
+| `app/Http/Controllers/Api/EmployeeController.php`                       | Added `notes()` (list), `addNote()` (create), `deleteNote()` (delete with author-only authorization) methods                                     | CRUD endpoints — only the note author can delete their own notes |
+| `routes/admin.php`                                                      | Added GET/POST `employees/{employee}/notes` and DELETE `employees/{employee}/notes/{note}` with appropriate permission middleware                | API routes for notes sub-resource under employees                |
+
+### Decisions
+
+- **Decision**: Human-friendly passwords using adjective + noun + digits + special char pattern
+    - **Alternatives**: Keep `Str::password(12)`, use PIN-based temporary codes
+    - **Rationale**: Staff need to type these passwords on first login; "HappyBlue42!" is memorable while still meeting complexity requirements (uppercase, lowercase, digits, special)
+- **Decision**: Notes as a sub-resource of employees with author tracking
+    - **Alternatives**: Generic notes system, localStorage (previous approach)
+    - **Rationale**: Notes are tightly coupled to employees; author tracking enables "only author can delete" policy and audit trail
+- **Decision**: Only the note author can delete their own notes
+    - **Rationale**: Prevents accidental deletion of other staff members' notes while keeping the system simple (no separate moderator permission)
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                   | Change                                                                                           | Triggered By                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `lib/api/services/employee.service.ts` | Added `EmployeeNoteResponse` type and `getNotes()`, `addNote()`, `deleteNote()` service methods  | Notes API integration           |
+| `app/admin/staff/page.tsx`             | Complete redesign with StaffDetailDrawer; Notes tab now fetches from API instead of localStorage | Notes API + staff page redesign |
+
+### Current State
+
+- **Models**: 31 (added EmployeeNote)
+- **Employee notes**: Full CRUD via API with author tracking and author-only deletion
+- **Temporary passwords**: Human-friendly format (e.g., "HappyBlue42!") — 15 adjectives × 15 nouns × digits × special chars
+- **Migration**: Created, needs to be run in production
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_06_113513_create_employee_notes_table.php` in production
+- Consider adding pagination to notes endpoint for employees with many notes
+- Activity logging for note creation/deletion
+- Consider adding `manage_employee_notes` permission for finer-grained access control
+
+---
+
+## [2026-04-06] Session: IAM Hardening — Resolve All 22 Open Audit Findings
+
+### Intent
+
+Close all 22 open IAM audit findings (IAM-008 through IAM-036) identified during the permission expansion session. Hardening spans suspended customer enforcement, token revocation, descriptive error responses, activity logging, PII reduction, and session management tooling.
+
+### Changes Made
+
+#### Critical (IAM-021, IAM-022)
+
+| File                                                                  | Change                                                                                                                     | Reason                                                                                                            |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `app/Http/Middleware/EnsureCustomerActive.php`                        | **NEW** — Middleware that blocks suspended customers from authenticated endpoints. Returns 403 with descriptive JSON body. | IAM-021: No enforcement existed — suspended customers could still use the API                                     |
+| `bootstrap/app.php`                                                   | Registered `customer.active` middleware alias                                                                              | IAM-021: Alias needed for route-level application                                                                 |
+| `routes/auth.php`                                                     | Applied `customer.active` middleware                                                                                       | IAM-021: Enforce on auth-related customer routes                                                                  |
+| `routes/protected.php`                                                | Applied `customer.active` middleware                                                                                       | IAM-021: Enforce on general protected routes                                                                      |
+| `routes/cart.php`                                                     | Applied `customer.active` middleware                                                                                       | IAM-021: Enforce on cart operations                                                                               |
+| `app/Http/Controllers/Api/Admin/CustomerController.php` — `suspend()` | Now calls `$customer->user->tokens()->delete()` and dispatches `CustomerSessionEvent`                                      | IAM-022: Suspended customers retained active tokens; now revoked immediately with real-time frontend notification |
+
+#### High Severity (IAM-023, IAM-024)
+
+| File                                             | Change                                                                                            | Reason                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `app/Providers/ResponseMacroServiceProvider.php` | `unauthorized()` macro now returns JSON body with `message` and `error` code instead of empty 401 | IAM-023: Empty 401 responses gave no context to API consumers      |
+| `app/Http/Resources/EmployeeAuthResource.php`    | Added `'status' => $this->employee->status->value` to login response                              | IAM-024: Frontend had no way to know employee status at login time |
+
+#### Medium Severity (IAM-026, IAM-027, IAM-028, IAM-029, IAM-032, IAM-008, IAM-019)
+
+| File                                                                                          | Change                                                                                                   | Reason                                                                          |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/Admin/CustomerController.php` — `forceLogout()`                     | **NEW METHOD** — Dispatches event, revokes all tokens, logs activity                                     | IAM-026: No admin ability to force-logout a customer                            |
+| `routes/admin.php`                                                                            | Added `POST admin/customers/{customer}/force-logout`                                                     | IAM-026: Route for new force-logout endpoint                                    |
+| `app/Http/Resources/AuthUserResource.php`                                                     | Added customer `status` field to response                                                                | IAM-027: Customer status not exposed in auth user response                      |
+| `app/Http/Controllers/Api/EmployeeAuthController.php` — `login()`                             | Returns descriptive error messages — wrong password vs inactive account with specific status reason      | IAM-028: Generic "invalid credentials" for all failure cases                    |
+| `app/Http/Controllers/Api/EmployeeController.php` — `forceLogout()`, `requirePasswordReset()` | Now use `response()->success()` macro for consistent response format                                     | IAM-029: Inconsistent response format across employee management endpoints      |
+| `app/Http/Controllers/Api/AuthController.php`                                                 | Added customer login/logout activity tracking via Spatie Activity Log                                    | IAM-032: No audit trail for customer authentication events                      |
+| `app/Services/OTPService.php` — `cleanup()`                                                   | Now deletes both expired OTPs AND verified OTPs older than 1 hour                                        | IAM-008: Verified OTPs were never cleaned up, accumulating indefinitely         |
+| `app/Http/Controllers/Api/OrderController.php` — `showByNumber()`                             | Returns minimal PII-free response (no customer name/phone/address, no payment details, no employee info) | IAM-019: Order tracking endpoint exposed excessive PII to unauthenticated users |
+
+#### Low Severity (IAM-014, IAM-033, IAM-036, IAM-013)
+
+| File                                                                   | Change                                                                                                  | Reason                                                                   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `app/Models/User.php`                                                  | Removed `username` from `$fillable`                                                                     | IAM-014: `username` column doesn't exist in schema — dead fillable entry |
+| `app/Http/Controllers/Api/EmployeeController.php` — `activeSessions()` | **NEW METHOD** — Returns list of employees with active Sanctum tokens                                   | IAM-033: No admin visibility into active staff sessions                  |
+| `routes/admin.php`                                                     | Added `GET admin/employees/sessions/active`                                                             | IAM-033: Route for active sessions endpoint                              |
+| `app/Http/Controllers/Api/EmployeeAuthController.php` — `login()`      | Failed login attempts logged via `activity('auth')->event('staff_login_failed')` with identifier and IP | IAM-036: No audit trail for failed staff login attempts                  |
+| —                                                                      | IAM-013 (guest session tracking) accepted as low risk — deferred                                        | IAM-013: Guest sessions don't carry sensitive data; risk accepted        |
+
+### Decisions
+
+- **Decision**: `EnsureCustomerActive` middleware applied at route group level, not globally
+    - **Rationale**: Only authenticated customer routes need the check; staff/admin routes use different auth flows
+- **Decision**: Token revocation on suspend is immediate (not deferred/queued)
+    - **Rationale**: Security action — suspended user should lose access within the same request, not after a queue delay
+- **Decision**: `showByNumber()` returns minimal response rather than requiring authentication
+    - **Rationale**: Order tracking by number is a public feature (e.g., SMS link); requiring auth would break the flow. Stripping PII is the correct mitigation.
+- **Decision**: Descriptive login errors (wrong password vs inactive account) rather than generic "invalid credentials"
+    - **Alternatives**: Keep generic error to prevent user enumeration
+    - **Rationale**: Staff login is not public-facing (behind staff portal); UX benefit outweighs enumeration risk for internal accounts
+- **Decision**: IAM-013 (guest session tracking) deferred as accepted risk
+    - **Rationale**: Guest sessions don't carry PII or sensitive state; tracking adds complexity without meaningful security benefit
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                                                                                                                       | Change                                                                                                                  | Triggered By                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `types/staff.ts`                                                                                                                           | `StaffStatus` changed to `'active' \| 'on_leave' \| 'suspended' \| 'terminated'`; `password` removed from `StaffMember` | IAM-025, IAM-031: Status alignment with backend enum; passwords never modeled on frontend |
+| `types/order.ts`                                                                                                                           | `StaffRole` re-exports from `staff.ts`                                                                                  | IAM-030: Role is an identity concern, not order concern                                   |
+| `lib/api/services/employee.service.ts`                                                                                                     | Status mapping passes through backend values; removed `password: ''`; `employmentStatus` mapped from backend            | IAM-025, IAM-031: Direct backend value passthrough                                        |
+| `lib/api/services/customer.service.ts`                                                                                                     | Added `forceLogoutCustomer()` method                                                                                    | IAM-026: Frontend integration for admin force-logout                                      |
+| `app/admin/staff/page.tsx`                                                                                                                 | Tabs, badges, actions updated for 4-state status                                                                        | IAM-025, IAM-034, IAM-035: Terminated replaces Archived                                   |
+| `app/staff/manager/staff/page.tsx`                                                                                                         | Same status updates as admin page                                                                                       | IAM-025: Parity                                                                           |
+| `app/partner/staff/page.tsx`, `app/partner/dashboard/page.tsx`, `app/staff/partner/staff/page.tsx`, `app/staff/partner/dashboard/page.tsx` | All `'archived'` references changed to `'terminated'`                                                                   | IAM-025: Consistent status terminology                                                    |
+
+### Current State
+
+- **IAM findings**: All 22 open findings (IAM-008 through IAM-036) resolved; 1 deferred as accepted risk (IAM-013)
+- **Middleware**: `EnsureCustomerActive` registered and applied to `auth.php`, `protected.php`, `cart.php`
+- **Token management**: Suspend action immediately revokes tokens + broadcasts session event
+- **Activity logging**: Customer login/logout, staff failed login attempts now tracked via Spatie Activity Log
+- **OTP cleanup**: Handles both expired and verified-but-stale OTPs
+- **PII exposure**: Order tracking endpoint stripped of customer PII, payment details, employee info
+- **Admin tooling**: Force-logout for customers, active session list for employees
+- **Response consistency**: All auth/employee endpoints use response macros with descriptive messages
+- **Pint**: Clean
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Monitor `EnsureCustomerActive` middleware for false positives on edge-case auth flows
+- Consider rate limiting on the staff login endpoint (failed attempts now logged but not throttled)
+- `CustomerSessionEvent` listener on frontend needs to handle the force-logout/suspend broadcast gracefully
+- Production deployment: verify middleware registration order in `bootstrap/app.php`
+
+---
+
+## [2026-04-06] Session: Permission Expansion + Legacy Employee Role Removal
+
+### Intent
+
+Remove the legacy `employee` role (a duplicate of `sales_staff` with identical permissions) from the backend system. Create a data migration to safely reassign existing users. Update the IAM auditor knowledge base with re-audit findings.
+
+### Changes Made
+
+| File                                                                             | Change                                                                                                                                                | Reason                                              |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `app/Enums/Role.php`                                                             | Removed `case Employee = 'employee'` from Role enum (now 8 roles)                                                                                     | Legacy duplicate of sales_staff                     |
+| `database/seeders/RoleSeeder.php`                                                | Removed the legacy employee role sync block                                                                                                           | Role no longer exists                               |
+| `app/Http/Controllers/Api/RoleController.php`                                    | Removed `'employee' => 'Employee'` from display name map                                                                                              | Role no longer returned to frontend                 |
+| `database/migrations/2026_04_06_040105_migrate_employee_role_to_sales_staff.php` | **NEW** — Reassigns users from employee→sales_staff role, cleans up role_has_permissions entries, deletes the legacy role record from the roles table | Safe migration of existing data before enum removal |
+| `docs/agents/iam-auditor-kb.md`                                                  | Updated with re-audit findings IAM-021 through IAM-036, employee role removal, and permission expansion changelog entry                               | Audit documentation for 16 new findings             |
+
+### Decisions
+
+- **Decision**: Hard-delete the employee role record from DB via migration rather than soft-deprecate
+    - **Rationale**: The employee role was an exact duplicate of sales_staff — no unique permissions or behavior. Clean removal is safe.
+- **Decision**: Migration reassigns users to sales_staff before deleting the role
+    - **Rationale**: Ensures no users are left without a role; sales_staff has identical permissions
+- **Decision**: Migration also cleans up `role_has_permissions` entries for the deleted role
+    - **Rationale**: Prevents orphaned permission records referencing a non-existent role
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                   | Change                                                                                                   | Triggered By                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `types/staff.ts`                       | Expanded `StaffPermissions` from 10 to 25 fields, added helper constants, rewrote `defaultPermissions()` | All 24 permissions now exposed      |
+| `lib/api/services/employee.service.ts` | Expanded permission mapper, removed `'employee'` from BackendRole type                                   | Employee role elimination           |
+| `app/admin/staff/page.tsx`             | Replaced switch with data-driven map for all 24 permissions, removed employee role filter                | Permission expansion + role removal |
+| `app/staff/manager/staff/page.tsx`     | Same updates as admin page                                                                               | Parity with admin page              |
+
+### Current State
+
+- **Role enum**: 8 roles (tech_admin, admin, branch_manager, kitchen_staff, sales_staff, delivery_staff, cashier, pos_operator)
+- **Permissions**: All 24 permissions remain in the system, now fully exposed to frontend for per-user toggling
+- **Migration**: Created but needs to be run in production
+- **IAM Audit KB**: 36 total findings documented (IAM-001 through IAM-036), 16 new from this session
+- **Pint**: Clean
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_06_040105_migrate_employee_role_to_sales_staff.php` in production
+- 16 new IAM audit findings still open: 2 Critical (IAM-025 super_admin bypass, IAM-029 no role-change audit), 3 High, 7 Medium, 4 Low
+- Monitor for any stale `employee` role references in route files or middleware
+- Consider adding `routes/employee.php` route file cleanup (references employee-specific routes)
+
+---
+
+## [2026-04-06] Session: Remove Cash at Pickup Payment Method
+
+### Intent
+
+Remove the "Cash at Pickup" payment method from the system — it doesn't exist in the business model. Clean up the database enum, seeder, factory, and analytics service.
+
+### Changes Made
+
+| File                                                                                          | Change                                                                            | Reason                           |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------- |
+| `database/migrations/2026_04_06_035811_remove_cash_at_pickup_from_branch_payment_methods.php` | **NEW** — Deletes existing `cash_at_pickup` rows, alters enum to remove the value | Clean up DB schema               |
+| `database/seeders/BranchSeeder.php`                                                           | Removed `cash_at_pickup` from `$paymentMethods` array                             | No longer seeded                 |
+| `database/factories/BranchFactory.php`                                                        | Removed `cash_at_pickup` from `paymentMethods()->createMany()`                    | No longer created in factories   |
+| `app/Services/AnalyticsService.php`                                                           | Removed `cash_at_pickup` label mapping from payment method analytics              | No longer displayed in analytics |
+
+### Decisions
+
+- **Decision**: Hard-delete existing rows + alter enum rather than soft-deprecate
+    - **Rationale**: No orders ever used this payment method — clean removal is safe
+- **Decision**: `BranchResource` doesn't need changes (dynamic mapping from DB)
+    - **Rationale**: It maps whatever's in `branch_payment_methods` — with rows deleted and enum altered, it stops returning `cash_at_pickup` automatically
+
+### Current State
+
+- `branch_payment_methods.payment_method` enum: `momo`, `cash_on_delivery`, `card`, `bank_transfer`
+- Migration applied successfully
+- Pint formatting applied
+
+### Pending / Follow-up
+
+- **Backend validation**: Add branch-level enforcement in `CheckoutSessionController` — currently order types, payment methods, and branch active status toggles save to DB but aren't validated during order creation
+- **POS fulfillment_type mapping**: `takeaway` in POS needs explicit mapping to `pickup` in branch_order_types
+
+---
+
 ## [2026-04-06] Session: Smart Categories Admin Settings — Full CRUD + Service Integration
 
 ### Intent
@@ -112,16 +502,16 @@ Build the admin configuration backend for smart categories. The initial smart ca
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `database/migrations/2026_04_06_015552_create_smart_category_settings_table.php` | **NEW** — Creates `smart_category_settings` table with slug (unique), is_enabled, display_order, item_limit, visible_hour_start, visible_hour_end. Seeds 9 default rows from SmartCategory enum. | Runtime configuration for each smart category |
-| `app/Models/SmartCategorySetting.php` | **NEW** — Model with fillable, casts (bool/int), `smartCategory()` enum coercion, `hasCustomTimeWindow()` check | Data model for admin-configurable settings per smart category |
-| `app/Http/Resources/SmartCategorySettingResource.php` | **NEW** — Returns enriched payload: id, slug, name, icon (from enum), is_enabled, display_order, item_limit, is_time_based, requires_customer, visible/default hour windows, default_item_limit | Frontend needs both custom and default values for UI comparison |
-| `app/Http/Requests/UpdateSmartCategorySettingRequest.php` | **NEW** — Validates is_enabled (bool), item_limit (1–50), visible_hour_start/end (nullable, 0–23) | Form Request validation per Laravel conventions |
-| `app/Http/Controllers/Api/Admin/SmartCategorySettingController.php` | **NEW** — 6 actions: index, update, reorder, preview, warmCache, resetToDefault. Preview resolves live bypassing cache. WarmCache supports branch-specific or all-branches. | Admin CRUD + operational tools for smart categories |
-| `app/Services/SmartCategories/SmartCategoryService.php` | **MODIFIED** — Now loads SmartCategorySetting rows (memoized via `once()`). `getActiveForContext()` checks is_enabled + custom `isVisibleAtHour()`. `resolve()` accepts optional limit, falls back to setting's item_limit. `getResolver()` changed private→public. Added `isVisibleAtHour()` and `getSettingFor()` private methods. | Service must respect admin settings for enable/disable, custom limits, custom time windows |
-| `routes/admin.php` | Added 6 routes under `permission:manage_menu`: GET/PATCH smart-categories, POST reorder, GET preview, POST warm-cache, POST reset | Admin-only access to smart category configuration |
-| `tests/Feature/SmartCategorySettingTest.php` | **NEW** — 16 Pest tests (170 assertions): model tests, CRUD tests, reorder, reset, preview, warm-cache, service-respects-disabled | Comprehensive test coverage for all new functionality |
+| File                                                                             | Change                                                                                                                                                                                                                                                                                                                               | Reason                                                                                     |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `database/migrations/2026_04_06_015552_create_smart_category_settings_table.php` | **NEW** — Creates `smart_category_settings` table with slug (unique), is_enabled, display_order, item_limit, visible_hour_start, visible_hour_end. Seeds 9 default rows from SmartCategory enum.                                                                                                                                     | Runtime configuration for each smart category                                              |
+| `app/Models/SmartCategorySetting.php`                                            | **NEW** — Model with fillable, casts (bool/int), `smartCategory()` enum coercion, `hasCustomTimeWindow()` check                                                                                                                                                                                                                      | Data model for admin-configurable settings per smart category                              |
+| `app/Http/Resources/SmartCategorySettingResource.php`                            | **NEW** — Returns enriched payload: id, slug, name, icon (from enum), is_enabled, display_order, item_limit, is_time_based, requires_customer, visible/default hour windows, default_item_limit                                                                                                                                      | Frontend needs both custom and default values for UI comparison                            |
+| `app/Http/Requests/UpdateSmartCategorySettingRequest.php`                        | **NEW** — Validates is_enabled (bool), item_limit (1–50), visible_hour_start/end (nullable, 0–23)                                                                                                                                                                                                                                    | Form Request validation per Laravel conventions                                            |
+| `app/Http/Controllers/Api/Admin/SmartCategorySettingController.php`              | **NEW** — 6 actions: index, update, reorder, preview, warmCache, resetToDefault. Preview resolves live bypassing cache. WarmCache supports branch-specific or all-branches.                                                                                                                                                          | Admin CRUD + operational tools for smart categories                                        |
+| `app/Services/SmartCategories/SmartCategoryService.php`                          | **MODIFIED** — Now loads SmartCategorySetting rows (memoized via `once()`). `getActiveForContext()` checks is_enabled + custom `isVisibleAtHour()`. `resolve()` accepts optional limit, falls back to setting's item_limit. `getResolver()` changed private→public. Added `isVisibleAtHour()` and `getSettingFor()` private methods. | Service must respect admin settings for enable/disable, custom limits, custom time windows |
+| `routes/admin.php`                                                               | Added 6 routes under `permission:manage_menu`: GET/PATCH smart-categories, POST reorder, GET preview, POST warm-cache, POST reset                                                                                                                                                                                                    | Admin-only access to smart category configuration                                          |
+| `tests/Feature/SmartCategorySettingTest.php`                                     | **NEW** — 16 Pest tests (170 assertions): model tests, CRUD tests, reorder, reset, preview, warm-cache, service-respects-disabled                                                                                                                                                                                                    | Comprehensive test coverage for all new functionality                                      |
 
 ### Decisions
 
@@ -140,15 +530,15 @@ Build the admin configuration backend for smart categories. The initial smart ca
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Triggered By |
-|------|--------|--------|
-| `types/api.ts` | Added `SmartCategorySetting` (14 fields) and `SmartCategoryPreview` interfaces | New API response contracts |
-| `lib/api/services/menu.service.ts` | Added 6 methods: getSmartCategorySettings, updateSmartCategorySetting, reorderSmartCategories, previewSmartCategory, warmSmartCategoryCache, resetSmartCategorySetting | Admin API integration |
-| `app/admin/menu/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation to new admin page |
-| `app/admin/menu-tags/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
-| `app/admin/menu/configure/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
-| `app/admin/menu-add-ons/page.tsx` | Added "Smart Categories" tab to MENU_SUB_TABS | Navigation consistency |
-| `app/admin/menu/smart-categories/page.tsx` | **NEW** — Full admin UI with category cards (toggle, limit, time windows, reorder, preview, cache warm, reset) | Admin management page for smart categories |
+| File (Frontend repo)                       | Change                                                                                                                                                                 | Triggered By                               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `types/api.ts`                             | Added `SmartCategorySetting` (14 fields) and `SmartCategoryPreview` interfaces                                                                                         | New API response contracts                 |
+| `lib/api/services/menu.service.ts`         | Added 6 methods: getSmartCategorySettings, updateSmartCategorySetting, reorderSmartCategories, previewSmartCategory, warmSmartCategoryCache, resetSmartCategorySetting | Admin API integration                      |
+| `app/admin/menu/page.tsx`                  | Added "Smart Categories" tab to MENU_SUB_TABS                                                                                                                          | Navigation to new admin page               |
+| `app/admin/menu-tags/page.tsx`             | Added "Smart Categories" tab to MENU_SUB_TABS                                                                                                                          | Navigation consistency                     |
+| `app/admin/menu/configure/page.tsx`        | Added "Smart Categories" tab to MENU_SUB_TABS                                                                                                                          | Navigation consistency                     |
+| `app/admin/menu-add-ons/page.tsx`          | Added "Smart Categories" tab to MENU_SUB_TABS                                                                                                                          | Navigation consistency                     |
+| `app/admin/menu/smart-categories/page.tsx` | **NEW** — Full admin UI with category cards (toggle, limit, time windows, reorder, preview, cache warm, reset)                                                         | Admin management page for smart categories |
 
 ### Current State
 
@@ -183,23 +573,23 @@ Replace hardcoded "CediBites Mix" and "Most Popular" categories on the customer-
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Enums/SmartCategory.php` | **NEW** — Backed PHP enum with 9 cases (MostPopular, Trending, TopRated, NewArrivals, BreakfastFavorites, LunchPicks, DinnerFavorites, LateNightBites, OrderAgain). Methods: `label()`, `icon()`, `requiresCustomer()`, `visibleHours()`, `isTimeBased()`, `isVisibleAtHour()`, `orderHours()`, `defaultLimit()`. Time windows: Breakfast 5–11, Lunch 11–15, Dinner 17–22, LateNight 21–3. | Defines all smart category types as a type-safe enum with metadata |
-| `app/Services/SmartCategories/SmartCategoryResolver.php` | **NEW** — Interface with `resolve(int $branchId, int $limit, ?int $customerId = null): Collection` | Contract for all resolver implementations |
-| `app/Services/SmartCategories/Resolvers/PopularResolver.php` | **NEW** — Queries order_items + orders (completed, paid) from last 30 days, ranks by SUM(quantity) | Resolves "Most Popular" items |
-| `app/Services/SmartCategories/Resolvers/TrendingResolver.php` | **NEW** — Compares order counts in last 7 days vs previous 7 days, ranks by velocity increase | Resolves "Trending Now" items |
-| `app/Services/SmartCategories/Resolvers/TopRatedResolver.php` | **NEW** — Filters menu_items with rating >= 4.0 AND rating_count >= 5 | Resolves "Top Rated" items |
-| `app/Services/SmartCategories/Resolvers/NewArrivalsResolver.php` | **NEW** — Items with created_at within last 14 days | Resolves "New Arrivals" items |
-| `app/Services/SmartCategories/Resolvers/TimeBasedResolver.php` | **NEW** — Accepts SmartCategory enum, uses `EXTRACT(HOUR FROM ...)` for PostgreSQL hour filtering. Handles overnight windows (e.g., 21→3). | Resolves Breakfast/Lunch/Dinner/Late Night categories |
-| `app/Services/SmartCategories/Resolvers/OrderAgainResolver.php` | **NEW** — Requires customerId, queries customer's past completed orders ranked by frequency | Resolves personalized "Order Again" items |
-| `app/Services/SmartCategories/SmartCategoryService.php` | **NEW** — Orchestrator service. Methods: `getActiveForContext()`, `resolve()`, `warmCacheForBranch()`, `invalidateBranch()`, `hydrateItems()`. Cache key: `smart_category:{slug}:branch:{id}`, TTL: 6 hours. | Central service coordinating all resolvers with caching |
-| `app/Console/Commands/ComputeSmartCategories.php` | **NEW** — Artisan command `menu:compute-smart-categories {--branch=}`. Warms cache for all active branches or a specific one. | Pre-computes smart categories on schedule |
-| `app/Http/Controllers/Api/SmartCategoryController.php` | **NEW** — `index(Request)` validates `branch_id`, calls SmartCategoryService, returns JSON | Public API endpoint for smart categories |
-| `routes/public.php` | Added `Route::get('smart-categories', ...)` and import | Public endpoint (no auth required) |
-| `routes/console.php` | Added `Schedule::command('menu:compute-smart-categories')->everySixHours()` | Automated cache warming |
-| `database/factories/OrderFactory.php` | Fixed `tax_rate`/`tax_amount` → `service_charge` | Factory had stale column names that don't exist in DB (renamed to service_charge previously) |
-| `tests/Feature/SmartCategoryTest.php` | **NEW** — 22 Pest tests (83 assertions): enum tests, all 6 resolver tests, service tests (active context, guest exclusion, caching, invalidation), API endpoint tests | Comprehensive test coverage |
+| File                                                             | Change                                                                                                                                                                                                                                                                                                                                                                                     | Reason                                                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `app/Enums/SmartCategory.php`                                    | **NEW** — Backed PHP enum with 9 cases (MostPopular, Trending, TopRated, NewArrivals, BreakfastFavorites, LunchPicks, DinnerFavorites, LateNightBites, OrderAgain). Methods: `label()`, `icon()`, `requiresCustomer()`, `visibleHours()`, `isTimeBased()`, `isVisibleAtHour()`, `orderHours()`, `defaultLimit()`. Time windows: Breakfast 5–11, Lunch 11–15, Dinner 17–22, LateNight 21–3. | Defines all smart category types as a type-safe enum with metadata                           |
+| `app/Services/SmartCategories/SmartCategoryResolver.php`         | **NEW** — Interface with `resolve(int $branchId, int $limit, ?int $customerId = null): Collection`                                                                                                                                                                                                                                                                                         | Contract for all resolver implementations                                                    |
+| `app/Services/SmartCategories/Resolvers/PopularResolver.php`     | **NEW** — Queries order_items + orders (completed, paid) from last 30 days, ranks by SUM(quantity)                                                                                                                                                                                                                                                                                         | Resolves "Most Popular" items                                                                |
+| `app/Services/SmartCategories/Resolvers/TrendingResolver.php`    | **NEW** — Compares order counts in last 7 days vs previous 7 days, ranks by velocity increase                                                                                                                                                                                                                                                                                              | Resolves "Trending Now" items                                                                |
+| `app/Services/SmartCategories/Resolvers/TopRatedResolver.php`    | **NEW** — Filters menu_items with rating >= 4.0 AND rating_count >= 5                                                                                                                                                                                                                                                                                                                      | Resolves "Top Rated" items                                                                   |
+| `app/Services/SmartCategories/Resolvers/NewArrivalsResolver.php` | **NEW** — Items with created_at within last 14 days                                                                                                                                                                                                                                                                                                                                        | Resolves "New Arrivals" items                                                                |
+| `app/Services/SmartCategories/Resolvers/TimeBasedResolver.php`   | **NEW** — Accepts SmartCategory enum, uses `EXTRACT(HOUR FROM ...)` for PostgreSQL hour filtering. Handles overnight windows (e.g., 21→3).                                                                                                                                                                                                                                                 | Resolves Breakfast/Lunch/Dinner/Late Night categories                                        |
+| `app/Services/SmartCategories/Resolvers/OrderAgainResolver.php`  | **NEW** — Requires customerId, queries customer's past completed orders ranked by frequency                                                                                                                                                                                                                                                                                                | Resolves personalized "Order Again" items                                                    |
+| `app/Services/SmartCategories/SmartCategoryService.php`          | **NEW** — Orchestrator service. Methods: `getActiveForContext()`, `resolve()`, `warmCacheForBranch()`, `invalidateBranch()`, `hydrateItems()`. Cache key: `smart_category:{slug}:branch:{id}`, TTL: 6 hours.                                                                                                                                                                               | Central service coordinating all resolvers with caching                                      |
+| `app/Console/Commands/ComputeSmartCategories.php`                | **NEW** — Artisan command `menu:compute-smart-categories {--branch=}`. Warms cache for all active branches or a specific one.                                                                                                                                                                                                                                                              | Pre-computes smart categories on schedule                                                    |
+| `app/Http/Controllers/Api/SmartCategoryController.php`           | **NEW** — `index(Request)` validates `branch_id`, calls SmartCategoryService, returns JSON                                                                                                                                                                                                                                                                                                 | Public API endpoint for smart categories                                                     |
+| `routes/public.php`                                              | Added `Route::get('smart-categories', ...)` and import                                                                                                                                                                                                                                                                                                                                     | Public endpoint (no auth required)                                                           |
+| `routes/console.php`                                             | Added `Schedule::command('menu:compute-smart-categories')->everySixHours()`                                                                                                                                                                                                                                                                                                                | Automated cache warming                                                                      |
+| `database/factories/OrderFactory.php`                            | Fixed `tax_rate`/`tax_amount` → `service_charge`                                                                                                                                                                                                                                                                                                                                           | Factory had stale column names that don't exist in DB (renamed to service_charge previously) |
+| `tests/Feature/SmartCategoryTest.php`                            | **NEW** — 22 Pest tests (83 assertions): enum tests, all 6 resolver tests, service tests (active context, guest exclusion, caching, invalidation), API endpoint tests                                                                                                                                                                                                                      | Comprehensive test coverage                                                                  |
 
 ### Decisions
 
@@ -223,14 +613,14 @@ Replace hardcoded "CediBites Mix" and "Most Popular" categories on the customer-
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Triggered By |
-|------|--------|--------|
-| `types/api.ts` | Added `SmartCategory` interface: `{ slug, name, icon, item_ids }` | New smart categories API response contract |
-| `lib/api/services/menu.service.ts` | Added `getSmartCategories(branchId)` | API integration for smart categories |
-| `lib/api/hooks/useSmartCategories.ts` | **NEW** — TanStack Query hook with 10-minute staleTime | React Query hook for data fetching |
-| `app/components/providers/MenuDiscoveryProvider.tsx` | Integrated smart categories, replaced hardcoded "Most Popular" logic | Dynamic smart category integration |
-| `app/components/ui/MenuGrid.tsx` | Replaced hardcoded "Most Popular" section with generic smart category section | Dynamic rendering of active smart category |
-| `app/(customer)/menu/page.tsx` | Categories now objects `{id, label}` with smart category support | Mixed category types (smart + regular) |
+| File (Frontend repo)                                 | Change                                                                        | Triggered By                               |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------ |
+| `types/api.ts`                                       | Added `SmartCategory` interface: `{ slug, name, icon, item_ids }`             | New smart categories API response contract |
+| `lib/api/services/menu.service.ts`                   | Added `getSmartCategories(branchId)`                                          | API integration for smart categories       |
+| `lib/api/hooks/useSmartCategories.ts`                | **NEW** — TanStack Query hook with 10-minute staleTime                        | React Query hook for data fetching         |
+| `app/components/providers/MenuDiscoveryProvider.tsx` | Integrated smart categories, replaced hardcoded "Most Popular" logic          | Dynamic smart category integration         |
+| `app/components/ui/MenuGrid.tsx`                     | Replaced hardcoded "Most Popular" section with generic smart category section | Dynamic rendering of active smart category |
+| `app/(customer)/menu/page.tsx`                       | Categories now objects `{id, label}` with smart category support              | Mixed category types (smart + regular)     |
 
 ### Current State
 

@@ -9,12 +9,12 @@ use Illuminate\Database\Eloquent\Builder;
 class OrderManagementService
 {
     /**
-     * Get orders for employee's branch (or all branches for admin/super_admin).
+     * Get orders for employee's branch (or all branches for admin/tech_admin).
      */
     public function getBranchOrders(User $user, array $filters = []): Builder
     {
         $employee = $user->employee;
-        $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
+        $canSeeAllOrders = $user->hasRole('admin') || $user->hasRole('tech_admin');
 
         // No payment filter here - admin sees all orders by default
         $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory.changedBy', 'assignedEmployee.user']);

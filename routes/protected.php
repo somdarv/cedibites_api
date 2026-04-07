@@ -5,17 +5,19 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use Illuminate\Support\Facades\Route;
 
-// --- Customer-accessible routes (any authenticated user) ---
-Route::post('menu-items/{menuItem}/rate', [MenuItemController::class, 'rate']);
+// --- Customer-accessible routes (any authenticated user, suspended customers blocked) ---
+Route::middleware('customer.active')->group(function () {
+    Route::post('menu-items/{menuItem}/rate', [MenuItemController::class, 'rate']);
 
-Route::get('orders', [OrderController::class, 'index']);
-Route::get('orders/{order}', [OrderController::class, 'show']);
+    Route::get('orders', [OrderController::class, 'index']);
+    Route::get('orders/{order}', [OrderController::class, 'show']);
 
-Route::get('notifications', [NotificationController::class, 'index']);
-Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
-Route::post('notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
-Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
-Route::delete('notifications/{id}', [NotificationController::class, 'destroy']);
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+    Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::delete('notifications/{id}', [NotificationController::class, 'destroy']);
+});
 
 // --- Staff-only routes (require specific permissions) ---
 Route::middleware('permission:access_kitchen')->group(function () {

@@ -25,8 +25,13 @@ Route::prefix('admin')->group(function () {
     });
 
     Route::middleware('permission:view_employees')->group(function () {
+        Route::get('employees/sessions/active', [EmployeeController::class, 'activeSessions']);
         Route::get('employees', [EmployeeController::class, 'index']);
         Route::get('employees/{employee}', [EmployeeController::class, 'show']);
+    });
+
+    Route::middleware('permission:view_employees')->group(function () {
+        Route::get('employees/{employee}/notes', [EmployeeController::class, 'notes']);
     });
 
     Route::middleware('permission:manage_employees')->group(function () {
@@ -35,6 +40,8 @@ Route::prefix('admin')->group(function () {
         Route::delete('employees/{employee}', [EmployeeController::class, 'destroy']);
         Route::post('employees/{employee}/force-logout', [EmployeeController::class, 'forceLogout']);
         Route::post('employees/{employee}/require-password-reset', [EmployeeController::class, 'requirePasswordReset']);
+        Route::post('employees/{employee}/notes', [EmployeeController::class, 'addNote']);
+        Route::delete('employees/{employee}/notes/{note}', [EmployeeController::class, 'deleteNote']);
 
         // Role and permission endpoints for staff management
         Route::get('roles', [RoleController::class, 'index']);
@@ -53,6 +60,7 @@ Route::prefix('admin')->group(function () {
         Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
         Route::patch('customers/{customer}/suspend', [CustomerController::class, 'suspend']);
         Route::patch('customers/{customer}/unsuspend', [CustomerController::class, 'unsuspend']);
+        Route::post('customers/{customer}/force-logout', [CustomerController::class, 'forceLogout']);
     });
 
     Route::middleware('permission:view_branches')->group(function () {
@@ -139,14 +147,14 @@ Route::prefix('admin')->group(function () {
     });
 
     // Cancel management (admin only)
-    Route::middleware('role:admin|super_admin')->group(function () {
+    Route::middleware('role:admin|tech_admin')->group(function () {
         Route::post('orders/{order}/approve-cancel', [CancelRequestController::class, 'approveCancel']);
         Route::post('orders/{order}/reject-cancel', [CancelRequestController::class, 'rejectCancel']);
         Route::post('orders/{order}/cancel', [CancelRequestController::class, 'directCancel']);
     });
 
     // System settings (admin only)
-    Route::middleware('role:admin|super_admin')->prefix('settings')->group(function () {
+    Route::middleware('role:admin|tech_admin')->prefix('settings')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'index']);
         Route::get('{key}', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'show']);
         Route::put('{key}', [\App\Http\Controllers\Api\Admin\SystemSettingController::class, 'update']);

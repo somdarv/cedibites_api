@@ -90,4 +90,9 @@ class Employee extends Model
     {
         return $this->hasMany(Shift::class);
     }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(EmployeeNote::class);
+    }
 }

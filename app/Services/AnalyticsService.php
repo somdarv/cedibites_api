@@ -175,11 +175,15 @@ class AnalyticsService
         // New customer = customer whose FIRST ever order falls within the selected period.
         // Repeat customer = customer who had at least one order before the period start.
         $dateFrom = $filters['date_from'] ?? null;
-        $dateTo   = $filters['date_to']   ?? null;
+        $dateTo = $filters['date_to'] ?? null;
 
         $newCustomersQuery = Customer::whereHas('orders', function ($q) use ($dateFrom, $dateTo) {
-            if ($dateFrom) $q->whereDate('created_at', '>=', $dateFrom);
-            if ($dateTo)   $q->whereDate('created_at', '<=', $dateTo);
+            if ($dateFrom) {
+                $q->whereDate('created_at', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $q->whereDate('created_at', '<=', $dateTo);
+            }
         })->whereDoesntHave('orders', function ($q) use ($dateFrom) {
             // Has no orders BEFORE the period start
             if ($dateFrom) {
@@ -323,7 +327,7 @@ class AnalyticsService
         $previousPeriodItems = $this->getPreviousPeriodItems($filters, $limit);
 
         return $items->map(function ($item) use ($previousPeriodItems) {
-            $key = $item->name . '|' . ($item->size_label ?? '');
+            $key = $item->name.'|'.($item->size_label ?? '');
             $previousRevenue = $previousPeriodItems[$key] ?? 0;
             $trend = $previousRevenue > 0
                 ? round((($item->revenue - $previousRevenue) / $previousRevenue) * 100)
@@ -522,7 +526,6 @@ class AnalyticsService
             $label = match ($method->payment_method) {
                 'mobile_money' => 'Mobile Money',
                 'cash_on_delivery' => 'Cash on Delivery',
-                'cash_at_pickup' => 'Cash at Pickup',
                 'card' => 'Card Payment',
                 default => ucfirst(str_replace('_', ' ', $method->payment_method ?? 'Unknown'))
             };
@@ -590,7 +593,8 @@ class AnalyticsService
             ->limit($limit)
             ->get()
             ->mapWithKeys(function ($item) {
-                $key = $item->name . '|' . ($item->size_label ?? '');
+                $key = $item->name.'|'.($item->size_label ?? '');
+
                 return [$key => $item->revenue];
             })
             ->toArray();

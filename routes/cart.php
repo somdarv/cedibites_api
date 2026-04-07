@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\CheckoutSessionController;
 use App\Http\Controllers\Api\OrderController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('cart/claim-guest', [CartController::class, 'claimGuest'])->middleware('auth:sanctum');
+Route::post('cart/claim-guest', [CartController::class, 'claimGuest'])->middleware(['auth:sanctum', 'customer.active']);
 
 Route::middleware('cart.identity')->group(function () {
     Route::get('cart', [CartController::class, 'index']);
