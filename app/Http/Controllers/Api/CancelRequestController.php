@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Models\OrderStatusHistory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CancelRequestController extends Controller
 {
@@ -62,17 +62,19 @@ class CancelRequestController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => 'cancelled',
-            'cancelled_at' => now(),
-            'cancelled_reason' => $order->cancel_request_reason,
-        ]);
+        DB::transaction(function () use ($order, $request) {
+            $order->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_reason' => $order->cancel_request_reason,
+            ]);
 
-        activity('orders')
-            ->causedBy($request->user())
-            ->performedOn($order)
-            ->event('cancel_approved')
-            ->log("Cancellation approved for order {$order->order_number}");
+            activity('orders')
+                ->causedBy($request->user())
+                ->performedOn($order)
+                ->event('cancel_approved')
+                ->log("Cancellation approved for order {$order->order_number}");
+        });
 
         $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
 
@@ -138,18 +140,20 @@ class CancelRequestController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => 'cancelled',
-            'cancelled_at' => now(),
-            'cancelled_reason' => $validated['reason'],
-        ]);
+        DB::transaction(function () use ($order, $request, $validated) {
+            $order->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_reason' => $validated['reason'],
+            ]);
 
-        activity('orders')
-            ->causedBy($request->user())
-            ->performedOn($order)
-            ->withProperties(['reason' => $validated['reason']])
-            ->event('cancelled')
-            ->log("Order {$order->order_number} directly cancelled by admin");
+            activity('orders')
+                ->causedBy($request->user())
+                ->performedOn($order)
+                ->withProperties(['reason' => $validated['reason']])
+                ->event('cancelled')
+                ->log("Order {$order->order_number} directly cancelled by admin");
+        });
 
         $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
 

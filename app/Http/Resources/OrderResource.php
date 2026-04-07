@@ -103,6 +103,16 @@ class OrderResource extends JsonResource
                 'changed_at' => $history->changed_at?->toIso8601String(),
                 'created_at' => $history->created_at?->toIso8601String(),
             ]),
+            // Cancel request fields
+            'cancel_requested_by' => $this->cancel_requested_by,
+            'cancel_request_reason' => $this->cancel_request_reason,
+            'cancel_requested_at' => $this->cancel_requested_at?->toIso8601String(),
+            'cancel_requested_by_user' => $this->cancelRequestedBy ? [
+                'id' => $this->cancelRequestedBy->id,
+                'name' => $this->cancelRequestedBy->name,
+            ] : null,
+            'cancelled_at' => $this->cancelled_at?->toIso8601String(),
+            'cancelled_reason' => $this->cancelled_reason,
             'recorded_at' => $this->recorded_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

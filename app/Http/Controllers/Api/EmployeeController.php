@@ -103,15 +103,32 @@ class EmployeeController extends Controller
                 $storeRecoverable = true;
             }
 
-            // Create user
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'password' => Hash::make($password),
-                'recoverable_password' => $storeRecoverable ? $password : null,
-                'must_reset_password' => $mustReset,
-            ]);
+            // Check if user with this phone already exists (e.g. registered as customer)
+            $existingUser = User::where('phone', $request->phone)->first();
+
+            if ($existingUser) {
+                // Reuse the existing user — update credentials for staff access
+                $existingUser->update([
+                    'name' => $request->name,
+                    'password' => Hash::make($password),
+                    'recoverable_password' => $storeRecoverable ? $password : null,
+                    'must_reset_password' => $mustReset,
+                ]);
+                if ($request->filled('email') && ! $existingUser->email) {
+                    $existingUser->update(['email' => $request->email]);
+                }
+                $user = $existingUser;
+            } else {
+                // Create new user
+                $user = User::create([
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'phone' => $request->phone,
+                    'password' => Hash::make($password),
+                    'recoverable_password' => $storeRecoverable ? $password : null,
+                    'must_reset_password' => $mustReset,
+                ]);
+            }
 
             // Assign role
             $user->assignRole($request->role);

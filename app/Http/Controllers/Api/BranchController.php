@@ -538,8 +538,8 @@ class BranchController extends Controller
 
         $rows = $this->analyticsService->getStaffSalesMetrics([
             'branch_id' => $branch->id,
-            'start_date' => $date,
-            'end_date' => $date,
+            'date_from' => $date,
+            'date_to' => $date,
         ]);
 
         return response()->success($rows);
