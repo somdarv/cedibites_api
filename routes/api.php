@@ -2,6 +2,20 @@
 
 use Illuminate\Support\Facades\Route;
 
+// TEMPORARY DIAGNOSTIC — remove after debugging
+Route::get('_debug/deploy-check', function () {
+    return response()->json([
+        'commit' => trim(shell_exec('git log --oneline -1 2>/dev/null') ?? 'unknown'),
+        'dir' => base_path(),
+        'php' => PHP_VERSION,
+        'routes_cached' => file_exists(base_path('bootstrap/cache/routes-v7.php')),
+        'employee_routes_exist' => file_exists(base_path('routes/employee.php')),
+        'checkout_controller_exists' => class_exists(\App\Http\Controllers\Api\CheckoutSessionController::class),
+        'pos_checkout_registered' => collect(\Illuminate\Support\Facades\Route::getRoutes()->getRoutes())->contains(fn($r) => str_contains($r->uri(), 'pos/checkout-sessions')),
+    ]);
+});
+
+
 require __DIR__.'/auth.php';
 require __DIR__.'/public.php';
 require __DIR__.'/cart.php';
