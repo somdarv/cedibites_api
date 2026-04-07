@@ -16,25 +16,13 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            echo "=== Nginx root for api.cedibites.com ==="
-            grep -r 'server_name.*api\.cedibites\.com' /etc/nginx/sites-enabled/ -A5 2>/dev/null || echo "Not found in sites-enabled"
-            grep -r 'server_name.*api\.cedibites\.com' /etc/nginx/conf.d/ -A5 2>/dev/null || echo "Not found in conf.d"
-            echo ""
-            echo "=== All nginx roots ==="
-            grep -r 'root.*cedibites' /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null || echo "No cedibites roots found"
-            echo ""
-            echo "=== Deploying ==="
             cd /var/www/production/laravel/cedibites_api
-            git pull origin master
+            git fetch origin master
+            git reset --hard origin/master
             composer install --no-dev --optimize-autoloader
             php artisan config:clear
             php artisan migrate --force
             php artisan cache:clear
             php artisan route:clear
-            rm -f bootstrap/cache/routes-v7.php
             php artisan view:clear
             sudo systemctl reload php8.4-fpm
-            echo "=== Production git HEAD ==="
-            git log --oneline -1
-            echo "=== Route check ==="
-            php artisan route:list --path=_debug --json 2>&1 | head -c 200
