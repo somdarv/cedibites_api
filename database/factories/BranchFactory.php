@@ -57,7 +57,6 @@ class BranchFactory extends Factory
             $branch->paymentMethods()->createMany([
                 ['payment_method' => 'momo', 'is_enabled' => true],
                 ['payment_method' => 'cash_on_delivery', 'is_enabled' => true],
-                ['payment_method' => 'cash_at_pickup', 'is_enabled' => true],
             ]);
         });
     }

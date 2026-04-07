@@ -4,17 +4,22 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Analytics\AnalyticsService;
 use Illuminate\Database\Eloquent\Builder;
 
 class OrderManagementService
 {
+    public function __construct(
+        protected AnalyticsService $analyticsService,
+    ) {}
+
     /**
-     * Get orders for employee's branch (or all branches for admin/super_admin).
+     * Get orders for employee's branch (or all branches for admin/tech_admin).
      */
     public function getBranchOrders(User $user, array $filters = []): Builder
     {
         $employee = $user->employee;
-        $canSeeAllOrders = $user->hasRole('super_admin') || $user->hasRole('admin');
+        $canSeeAllOrders = $user->hasRole('admin') || $user->hasRole('tech_admin');
 
         // No payment filter here - admin sees all orders by default
         $query = Order::with(['customer.user', 'items.menuItemOption.menuItem', 'payments', 'branch', 'statusHistory.changedBy', 'assignedEmployee.user']);
@@ -108,49 +113,31 @@ class OrderManagementService
             return $this->emptyStats();
         }
 
-        $branchIds = $employee->branches()->pluck('branches.id');
-        if ($branchIds->isEmpty()) {
+        $branchIds = $employee->branches()->pluck('branches.id')->toArray();
+        if (empty($branchIds)) {
             return $this->emptyStats();
         }
 
-        $today = now()->startOfDay();
-
-        return [
-            'pending_orders' => Order::whereIn('branch_id', $branchIds)
-                ->paymentConfirmed()
-                ->where('status', 'received')
-                ->count(),
-
-            'preparing_orders' => Order::whereIn('branch_id', $branchIds)
-                ->paymentConfirmed()
-                ->whereIn('status', ['preparing', 'ready', 'ready_for_pickup', 'out_for_delivery'])
-                ->count(),
-
-            'today_orders' => Order::whereIn('branch_id', $branchIds)
-                ->paymentConfirmed()
-                ->whereDate('created_at', $today)
-                ->count(),
-
-            'today_revenue' => Order::whereIn('branch_id', $branchIds)
-                ->whereHas('payments', fn ($q) => $q->where('payment_status', 'completed'))
-                ->whereDate('created_at', $today)
-                ->where('status', '!=', 'cancelled')
-                ->sum('total_amount'),
-
-            'completed_today' => Order::whereIn('branch_id', $branchIds)
-                ->whereDate('created_at', $today)
-                ->whereIn('status', ['completed', 'delivered'])
-                ->count(),
-        ];
+        return $this->analyticsService->getEmployeeBranchStats($branchIds);
     }
 
     /**
-     * Update order status.
+     * Update order status with state machine validation.
      *
      * @param  \App\Models\User|null  $causer  User who performed the status change (e.g. employee)
+     *
+     * @throws \Illuminate\Http\Exceptions\HttpResponseException
      */
     public function updateOrderStatus(Order $order, string $status, ?string $notes = null, ?User $causer = null): Order
     {
+        if (! $order->canTransitionTo($status)) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'message' => "Cannot transition order from '{$order->status}' to '{$status}'.",
+                ], 422)
+            );
+        }
+
         $oldStatus = $order->status;
 
         $updateData = ['status' => $status];

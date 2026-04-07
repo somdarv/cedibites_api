@@ -19,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\EnsureUserHasPermission::class,
             'cart.identity' => \App\Http\Middleware\EnsureCartIdentity::class,
             'optional.auth' => \App\Http\Middleware\OptionalSanctumAuth::class,
+            'password.reset' => \App\Http\Middleware\EnsurePasswordReset::class,
+            'branch.access' => \App\Http\Middleware\EnsureBranchAccess::class,
+            'customer.active' => \App\Http\Middleware\EnsureCustomerActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -29,16 +29,25 @@ class PosOrderController extends Controller
     {
         $phone = preg_replace('/\s+/', '', $phone);
         if (str_starts_with($phone, '0')) {
-            return '+233' . substr($phone, 1);
+            return '+233'.substr($phone, 1);
         }
         if (str_starts_with($phone, '233') && ! str_starts_with($phone, '+')) {
-            return '+' . $phone;
+            return '+'.$phone;
         }
+
         return $phone;
     }
 
+    /**
+     * @deprecated Use POST /pos/checkout-sessions instead. This endpoint will be removed in a future release.
+     */
     public function store(StorePosOrderRequest $request): JsonResponse
     {
+        // Deprecation header — clients should migrate to checkout-sessions flow
+        header('Deprecation: true');
+        header('Sunset: 2025-09-01');
+        header('Link: </pos/checkout-sessions>; rel="successor-version"');
+
         // Log incoming request for debugging
         \Log::info('POS order request received', [
             'validated' => $request->validated(),
@@ -92,12 +101,17 @@ class PosOrderController extends Controller
                 // Find or create a customer record by phone so POS customers
                 // appear in the admin customers list.
                 $contactPhone = $this->normalizePhone($request->validated('contact_phone') ?? '');
-                $contactName  = $request->validated('contact_name');
+                $contactName = $request->validated('contact_name');
 
                 $posUser = \App\Models\User::firstOrCreate(
                     ['phone' => $contactPhone],
-                    ['name'  => $contactName]
+                    ['name' => $contactName]
                 );
+
+                // Keep the display name current when the same phone is used with a different name
+                if ($contactName && $posUser->name !== $contactName && ! $posUser->wasRecentlyCreated) {
+                    $posUser->update(['name' => $contactName]);
+                }
 
                 if (! $posUser->customer) {
                     $posUser->customer()->create(['is_guest' => true]);
@@ -300,7 +314,7 @@ class PosOrderController extends Controller
         }
 
         // Admins and super admins can create orders for any branch
-        if ($employee->user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::SuperAdmin])) {
+        if ($employee->user->hasAnyRole([\App\Enums\Role::Admin, \App\Enums\Role::TechAdmin])) {
             return;
         }
 

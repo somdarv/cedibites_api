@@ -3,7 +3,7 @@
 use App\Http\Controllers\Api\BranchController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('manager')->middleware('permission:view_branches')->group(function () {
+Route::prefix('manager')->middleware(['permission:view_branches', 'branch.access'])->group(function () {
     Route::get('branches/{branch}/employees', [BranchController::class, 'employees'])
         ->middleware('permission:view_employees');
     Route::get('branches/{branch}/orders', [BranchController::class, 'orders'])

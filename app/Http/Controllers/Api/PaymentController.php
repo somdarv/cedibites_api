@@ -6,13 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\Analytics\AnalyticsService;
 use App\Services\HubtelPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
-    public function __construct(protected HubtelPaymentService $hubtelService) {}
+    public function __construct(
+        protected HubtelPaymentService $hubtelService,
+        protected AnalyticsService $analyticsService,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -54,45 +58,15 @@ class PaymentController extends Controller
      */
     public function stats(Request $request): JsonResponse
     {
-        $query = Payment::query();
+        $filters = array_filter([
+            'branch_id' => $request->input('branch_id'),
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+        ]);
 
-        if ($request->has('branch_id')) {
-            $query->whereHas('order', fn ($q) => $q->where('branch_id', $request->branch_id));
-        }
+        $stats = $this->analyticsService->getPaymentStats($filters);
 
-        if ($request->has('date_from')) {
-            $query->whereDate('payments.created_at', '>=', $request->date_from);
-        }
-
-        if ($request->has('date_to')) {
-            $query->whereDate('payments.created_at', '<=', $request->date_to);
-        }
-
-        $rows = (clone $query)
-            ->selectRaw('payment_status, COUNT(*) as count, SUM(amount) as total')
-            ->groupBy('payment_status')
-            ->get()
-            ->keyBy('payment_status');
-
-        // For no_charge, sum the order total_amount (payment amount is always 0)
-        $noChargeOrderTotal = (clone $query)
-            ->where('payments.payment_status', 'no_charge')
-            ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->sum('orders.total_amount');
-
-        $stat = fn (string $status) => [
-            'count' => (int) ($rows[$status]->count ?? 0),
-            'total' => (float) ($rows[$status]->total ?? 0),
-        ];
-
-        return response()->success([
-            'completed' => $stat('completed'),
-            'pending' => $stat('pending'),
-            'no_charge' => [
-                'count' => (int) ($rows['no_charge']->count ?? 0),
-                'total' => (float) $noChargeOrderTotal,
-            ],
-        ], 'Payment stats retrieved successfully.');
+        return response()->success($stats, 'Payment stats retrieved successfully.');
     }
 
     /**
@@ -185,6 +159,7 @@ class PaymentController extends Controller
                 'customer_name' => $customerName,
                 'customer_phone' => $customerPhone,
                 'customer_email' => $customerEmail,
+                'create_payment_record' => true, // Legacy flow: real Order exists, create Payment now
             ]);
 
             return response()->success(
@@ -245,15 +220,20 @@ class PaymentController extends Controller
     /**
      * Check whether the incoming request originates from an allowed Hubtel IP.
      *
-     * When HUBTEL_ALLOWED_IPS is not configured (local/dev), all IPs are allowed.
-     * In production, set HUBTEL_ALLOWED_IPS to a comma-separated list of Hubtel's
-     * callback IP addresses to enforce strict allowlisting.
+     * In production, if HUBTEL_ALLOWED_IPS is not configured, reject all callback
+     * requests (fail-closed). In non-production (local/dev), allow all IPs.
      */
     private function isAllowedCallbackIp(Request $request): bool
     {
         $allowedIps = config('services.hubtel.allowed_ips');
 
         if (empty($allowedIps)) {
+            if (app()->environment('production')) {
+                \Illuminate\Support\Facades\Log::warning('Hubtel callback rejected: HUBTEL_ALLOWED_IPS not configured in production');
+
+                return false;
+            }
+
             return true;
         }
 
@@ -263,13 +243,14 @@ class PaymentController extends Controller
     }
 
     /**
-     * Manually verify payment status
+     * Manually verify payment status.
+     *
+     * Also syncs CheckoutSession → Order when Hubtel reports the payment as completed.
      */
     public function verifyPayment(Payment $payment): JsonResponse
     {
         // If the payment is already in a terminal state (completed/failed/refunded),
         // return the local record directly without calling the external API.
-        // This covers RMP payments where the callback has already updated the status.
         if (in_array($payment->payment_status, ['completed', 'failed', 'refunded'])) {
             return response()->success(
                 new PaymentResource($payment->fresh()),
@@ -281,12 +262,46 @@ class PaymentController extends Controller
             $order = $payment->order;
             $result = $this->hubtelService->verifyTransaction($order->order_number);
 
+            // Sync: if Hubtel says completed, check for an unconverted CheckoutSession
+            $verified = $result['payment'] ?? $payment->fresh();
+            if ($verified->payment_status === 'completed') {
+                $this->syncCheckoutSessionIfNeeded($verified);
+            }
+
             return response()->success(
-                new PaymentResource($result['payment']),
+                new PaymentResource($verified),
                 'Payment verified successfully'
             );
         } catch (\Exception $e) {
             return response()->error($e->getMessage(), 400);
+        }
+    }
+
+    /**
+     * If a CheckoutSession is associated with this payment and hasn't been converted yet,
+     * convert it to an order now.
+     */
+    private function syncCheckoutSessionIfNeeded(Payment $payment): void
+    {
+        try {
+            // Use a transaction + lockForUpdate to prevent two concurrent
+            // verify calls from both triggering order creation.
+            \Illuminate\Support\Facades\DB::transaction(function () use ($payment) {
+                $session = \App\Models\CheckoutSession::where('hubtel_transaction_id', $payment->transaction_id)
+                    ->whereNull('order_id')
+                    ->whereIn('status', ['payment_initiated', 'pending'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($session) {
+                    $session->convertToOrder();
+                }
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('syncCheckoutSessionIfNeeded failed', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

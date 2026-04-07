@@ -60,8 +60,11 @@ class ResponseMacroServiceProvider extends ServiceProvider
         });
 
         // Unauthorized response (401)
-        Response::macro('unauthorized', function () {
-            return response()->noContent(401);
+        Response::macro('unauthorized', function (string $message = 'Invalid credentials.', string $error = 'invalid_credentials'): JsonResponse {
+            return response()->json([
+                'message' => $message,
+                'error' => $error,
+            ], 401);
         });
 
         // Forbidden response (403)

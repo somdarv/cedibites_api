@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Events\OrderBroadcastEvent;
 use App\Models\Employee;
 use App\Models\Order;
+use App\Models\ShiftOrder;
 use App\Notifications\HighValueOrderNotification;
 use App\Notifications\NewOrderNotification;
 use App\Notifications\OrderCancelledNotification;
@@ -28,24 +29,36 @@ class OrderObserver
             'changed_at' => now(),
         ]);
 
+        // Past orders (manual entries) should not trigger notifications or broadcasts.
+        if ($order->order_source === 'manual_entry') {
+            return;
+        }
+
         // Defer notifications until after the DB transaction commits so the
         // payment row is available and we don't send SMS before payment is confirmed.
         \DB::afterCommit(function () use ($order) {
-            $order->loadMissing('payments');
-            $payment = $order->payments->first();
-            $isPaid = $payment && in_array($payment->payment_status, ['completed', 'no_charge']);
+            try {
+                $order->loadMissing('payments');
+                $payment = $order->payments->first();
+                $isPaid = $payment && in_array($payment->payment_status, ['completed', 'no_charge']);
 
-            // Only send order-confirmed SMS/notification once payment is confirmed.
-            if ($isPaid) {
-                $order->customer?->user?->notify(new OrderConfirmedNotification($order));
-            }
+                // Only send order-confirmed SMS/notification once payment is confirmed.
+                if ($isPaid) {
+                    $order->customer?->user?->notify(new OrderConfirmedNotification($order));
+                }
 
-            // Notify all active employees at the branch
-            $this->notifyBranchEmployees($order);
+                // Notify all active employees at the branch
+                $this->notifyBranchEmployees($order);
 
-            // Notify manager for high value orders
-            if ($order->total_amount > 200) {
-                $this->notifyBranchManager($order);
+                // Notify manager for high value orders
+                if ($order->total_amount > 200) {
+                    $this->notifyBranchManager($order);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('OrderObserver created notification failed', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             OrderBroadcastEvent::dispatch($order, 'created');
@@ -62,6 +75,11 @@ class OrderObserver
             return;
         }
 
+        // Past orders (manual entries) should not trigger notifications or broadcasts.
+        if ($order->order_source === 'manual_entry') {
+            return;
+        }
+
         // Record status change in history
         $order->statusHistory()->create([
             'status' => $order->status,
@@ -69,16 +87,29 @@ class OrderObserver
             'changed_at' => now(),
         ]);
 
-        $customer = $order->customer?->user;
+        try {
+            $customer = $order->customer?->user;
 
-        match ($order->status) {
-            'preparing' => $customer?->notify(new OrderPreparingNotification($order)),
-            'ready', 'ready_for_pickup' => $customer?->notify(new OrderReadyNotification($order)),
-            'out_for_delivery' => $customer?->notify(new OrderOutForDeliveryNotification($order)),
-            'completed', 'delivered' => $customer?->notify(new OrderCompletedNotification($order)),
-            'cancelled' => $customer?->notify(new OrderCancelledNotification($order)),
-            default => null,
-        };
+            match ($order->status) {
+                'preparing' => $customer?->notify(new OrderPreparingNotification($order)),
+                'ready', 'ready_for_pickup' => $customer?->notify(new OrderReadyNotification($order)),
+                'out_for_delivery' => $customer?->notify(new OrderOutForDeliveryNotification($order)),
+                'completed', 'delivered' => $customer?->notify(new OrderCompletedNotification($order)),
+                'cancelled' => $customer?->notify(new OrderCancelledNotification($order)),
+                default => null,
+            };
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('OrderObserver updated notification failed', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Handle cancellation side-effects: auto-refund payment + fix shift counters
+        if ($order->status === 'cancelled') {
+            $this->handleCancellationSideEffects($order);
+        }
 
         OrderBroadcastEvent::dispatch($order, 'updated');
     }
@@ -109,5 +140,33 @@ class OrderObserver
             ->first();
 
         $manager?->user?->notify(new HighValueOrderNotification($order));
+    }
+
+    /**
+     * Handle cancellation side-effects: auto-refund completed payments and fix shift counters.
+     */
+    protected function handleCancellationSideEffects(Order $order): void
+    {
+        // Auto-refund: flip completed payments to refunded (skip no_charge — nothing to refund)
+        $order->loadMissing('payments');
+        foreach ($order->payments as $payment) {
+            if ($payment->payment_status === 'completed') {
+                $payment->update([
+                    'payment_status' => 'refunded',
+                    'refunded_at' => now(),
+                ]);
+            }
+        }
+
+        // Fix shift counters: find any ShiftOrder for this order and decrement
+        $shiftOrders = ShiftOrder::where('order_id', $order->id)->with('shift')->get();
+        foreach ($shiftOrders as $shiftOrder) {
+            $shift = $shiftOrder->shift;
+            if ($shift) {
+                $shift->decrement('total_sales', (float) $shiftOrder->order_total);
+                $shift->decrement('order_count');
+            }
+            $shiftOrder->delete();
+        }
     }
 }

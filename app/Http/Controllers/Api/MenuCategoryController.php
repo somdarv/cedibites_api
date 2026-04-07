@@ -27,16 +27,7 @@ class MenuCategoryController extends Controller
             $query->where('branch_id', $request->integer('branch_id'));
         }
 
-        // For the public endpoint, return unique categories by name
-        // This prevents duplicate category names when multiple branches have the same categories
-        $categories = $query->orderBy('display_order')
-            ->get()
-            ->groupBy('name')
-            ->map(function ($group) {
-                // Return the first category of each name group
-                return $group->first();
-            })
-            ->values();
+        $categories = $query->orderBy('display_order')->get();
 
         return response()->success(
             MenuCategoryResource::collection($categories),
@@ -49,7 +40,12 @@ class MenuCategoryController extends Controller
      */
     public function store(CreateMenuCategoryRequest $request): JsonResponse
     {
-        $category = MenuCategory::create($request->validated());
+        $data = $request->validated();
+        if (empty($data['slug'])) {
+            $data['slug'] = \Illuminate\Support\Str::slug($data['name']);
+        }
+
+        $category = MenuCategory::create($data);
 
         return response()->success(
             new MenuCategoryResource($category),

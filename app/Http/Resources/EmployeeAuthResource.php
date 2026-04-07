@@ -22,6 +22,7 @@ class EmployeeAuthResource extends JsonResource
             'id' => (string) $this->employee->id,
             'name' => $this->name,
             'role' => $role,
+            'status' => $this->employee->status->value,
             'branches' => $this->employee->branches->map(fn ($branch) => [
                 'id' => (string) $branch->id,
                 'name' => $branch->name,

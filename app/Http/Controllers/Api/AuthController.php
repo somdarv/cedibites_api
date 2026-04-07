@@ -6,6 +6,7 @@ use App\Events\CustomerSessionEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\SendOTPRequest;
+use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\VerifyOTPRequest;
 use App\Http\Resources\AuthUserResource;
 use App\Models\Customer;
@@ -95,6 +96,9 @@ class AuthController extends Controller
         $user = User::where('phone', $phone)->first();
 
         if ($user) {
+            // Create a Customer record if one doesn't exist.
+            // Staff members can also be customers (dual-identity) — they use
+            // OTP login as customer and password login as staff.
             if (! $user->customer) {
                 Customer::create([
                     'user_id' => $user->id,
@@ -104,6 +108,11 @@ class AuthController extends Controller
             }
 
             $token = $user->createToken('auth-token')->plainTextToken;
+
+            activity('auth')
+                ->causedBy($user)
+                ->event('customer_login')
+                ->log("Customer login: {$user->name} ({$user->phone})");
 
             return response()->success([
                 'token' => $token,
@@ -170,6 +179,7 @@ class AuthController extends Controller
     {
         $user = $request->user()->load(['customer', 'roles.permissions']);
 
+        // Ensure a Customer record exists — staff can also be customers.
         if (! $user->customer) {
             Customer::create([
                 'user_id' => $user->id,
@@ -244,11 +254,35 @@ class AuthController extends Controller
     }
 
     /**
+     * Update authenticated customer's profile.
+     */
+    public function updateProfile(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $validated = $request->validated();
+
+        $user->update($validated);
+
+        activity('auth')
+            ->causedBy($user)
+            ->event('profile_updated')
+            ->withProperties(['fields' => array_keys($validated)])
+            ->log("Profile updated: {$user->name} ({$user->phone})");
+
+        return response()->success(new AuthUserResource($user->load(['customer', 'roles.permissions'])));
+    }
+
+    /**
      * Logout user.
      */
     public function logout(Request $request): JsonResponse|Response
     {
         $user = $request->user();
+
+        activity('auth')
+            ->causedBy($user)
+            ->event('customer_logout')
+            ->log("Customer logout: {$user->name} ({$user->phone})");
 
         CustomerSessionEvent::dispatch($user);
 

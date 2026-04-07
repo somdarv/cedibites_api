@@ -34,7 +34,7 @@ class BranchSeeder extends Seeder
 
         $daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
         $orderTypes = ['delivery', 'pickup', 'dine_in'];
-        $paymentMethods = ['momo', 'cash_on_delivery', 'cash_at_pickup'];
+        $paymentMethods = ['momo', 'cash_on_delivery'];
 
         foreach ($branches as $branchData) {
             $deliveryData = $branchData['delivery'];

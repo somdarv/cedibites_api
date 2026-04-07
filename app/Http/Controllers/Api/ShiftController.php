@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AddOrderToShiftRequest;
 use App\Http\Requests\StartShiftRequest;
@@ -31,7 +32,7 @@ class ShiftController extends Controller
             ->when($request->date, fn ($q, $date) => $q->whereDate('login_at', $date))
             ->orderByDesc('login_at');
 
-        if (! $request->user()?->hasRole('super_admin')) {
+        if (! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             $query->where('employee_id', $employee->id);
         }
 
@@ -50,7 +51,7 @@ class ShiftController extends Controller
             return response()->forbidden('User is not an employee');
         }
 
-        if ((string) $currentEmployee->id !== $employeeId && ! $request->user()?->hasRole('super_admin')) {
+        if ((string) $currentEmployee->id !== $employeeId && ! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             return response()->forbidden('Cannot view another employee\'s active shift');
         }
 
@@ -108,7 +109,7 @@ class ShiftController extends Controller
             return response()->forbidden('User is not an employee');
         }
 
-        if ($shift->employee_id !== $employee->id && ! $request->user()?->hasRole('super_admin')) {
+        if ($shift->employee_id !== $employee->id && ! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             return response()->forbidden('Cannot end another employee\'s shift');
         }
 
@@ -140,7 +141,7 @@ class ShiftController extends Controller
     {
         $employee = $request->user()->employee;
 
-        if ($shift->employee_id !== $employee->id && ! $request->user()?->hasRole('super_admin')) {
+        if ($shift->employee_id !== $employee->id && ! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             return response()->forbidden('Cannot add order to another employee\'s shift');
         }
 
@@ -191,7 +192,7 @@ class ShiftController extends Controller
             ->whereDate('login_at', $date)
             ->orderByDesc('login_at');
 
-        if (! $request->user()?->hasRole('super_admin')) {
+        if (! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             $query->where('employee_id', $employee->id);
         }
 
@@ -210,7 +211,7 @@ class ShiftController extends Controller
             return response()->forbidden('User is not an employee');
         }
 
-        if ((string) $employee->id !== $staffId && ! $request->user()?->hasRole('super_admin')) {
+        if ((string) $employee->id !== $staffId && ! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
             return response()->forbidden('Cannot view another employee\'s shifts');
         }
 

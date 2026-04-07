@@ -26,7 +26,12 @@ class MenuItemOptionResource extends JsonResource
             'base_price' => (float) $this->price,
             'display_order' => $this->display_order,
             'is_available' => $branchOverride?->is_available ?? $this->is_available,
-            'image_url' => $this->getFirstMediaUrl('menu-item-options') ?: null,
+            'image_url' => ($media = $this->getFirstMedia('menu-item-options'))
+                ? route('media.show', $media)
+                : null,
+            'thumbnail_url' => ($media = $this->getFirstMedia('menu-item-options'))
+                ? route('media.show', ['media' => $media, 'conversion' => 'thumbnail'])
+                : null,
             'branch_prices' => $this->whenLoaded('branchPrices', fn () => $this->branchPrices->map(fn ($bp) => [
                 'branch_id' => $bp->branch_id,
                 'price' => $bp->price !== null ? (float) $bp->price : null,

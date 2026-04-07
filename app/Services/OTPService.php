@@ -21,7 +21,7 @@ class OTPService
     {
         return Otp::create([
             'phone' => $phone,
-            'otp' => $otp,
+            'otp' => hash('sha256', $otp),
             'expires_at' => now()->addMinutes(5),
             'ip_address' => $ipAddress,
         ]);
@@ -33,7 +33,7 @@ class OTPService
     public function verify(string $phone, string $otp): ?Otp
     {
         $otpRecord = Otp::where('phone', $phone)
-            ->where('otp', $otp)
+            ->where('otp', hash('sha256', $otp))
             ->where('verified', false)
             ->latest()
             ->first();
@@ -59,10 +59,15 @@ class OTPService
     }
 
     /**
-     * Cleanup expired OTPs.
+     * Cleanup expired and old verified OTPs.
      */
     public function cleanup(): int
     {
-        return Otp::where('expires_at', '<', now())->delete();
+        return Otp::where('expires_at', '<', now())
+            ->orWhere(function ($query) {
+                $query->where('verified', true)
+                    ->where('created_at', '<', now()->subHour());
+            })
+            ->delete();
     }
 }

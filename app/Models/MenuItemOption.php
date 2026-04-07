@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class MenuItemOption extends Model implements HasMedia
 {
@@ -63,5 +64,14 @@ class MenuItemOption extends Model implements HasMedia
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('menu-item-options')->singleFile();
+    }
+
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('thumbnail')
+            ->width(400)
+            ->height(300)
+            ->sharpen(10)
+            ->nonQueued();
     }
 }

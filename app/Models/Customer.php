@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CustomerStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -34,7 +35,7 @@ class Customer extends Model
     {
         return [
             'is_guest' => 'boolean',
-            'status' => 'string',
+            'status' => CustomerStatus::class,
         ];
     }
 

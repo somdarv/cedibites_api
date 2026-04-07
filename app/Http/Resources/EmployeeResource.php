@@ -36,20 +36,23 @@ class EmployeeResource extends JsonResource
             $permissions = array_merge($permissions, $user->permissions->pluck('name')->toArray());
         }
 
+        // Only expose PII to users who can manage employees
+        $canViewPii = $request->user()?->can('manage_employees');
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
             'employee_no' => $this->employee_no,
             'status' => $this->status,
             'hire_date' => $this->hire_date?->toDateString(),
-            'ssnit_number' => $this->ssnit_number,
-            'ghana_card_id' => $this->ghana_card_id,
-            'tin_number' => $this->tin_number,
-            'date_of_birth' => $this->date_of_birth?->toDateString(),
+            'ssnit_number' => $canViewPii ? $this->ssnit_number : null,
+            'ghana_card_id' => $canViewPii ? $this->ghana_card_id : null,
+            'tin_number' => $canViewPii ? $this->tin_number : null,
+            'date_of_birth' => $canViewPii ? $this->date_of_birth?->toDateString() : null,
             'nationality' => $this->nationality,
-            'emergency_contact_name' => $this->emergency_contact_name,
-            'emergency_contact_phone' => $this->emergency_contact_phone,
-            'emergency_contact_relationship' => $this->emergency_contact_relationship,
+            'emergency_contact_name' => $canViewPii ? $this->emergency_contact_name : null,
+            'emergency_contact_phone' => $canViewPii ? $this->emergency_contact_phone : null,
+            'emergency_contact_relationship' => $canViewPii ? $this->emergency_contact_relationship : null,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
             'user' => [
