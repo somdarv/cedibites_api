@@ -114,35 +114,35 @@ Fix bugs, silent data issues, N+1 queries, and frontend-backend contract mismatc
 
 #### Query Builder Fix
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                                               | Change                                                                                           | Reason                                                                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `app/Services/Analytics/AnalyticsQueryBuilder.php` | `activeOrders()` refactored to use shared `applyFilters()` method instead of inline filter logic | Was missing `branch_ids` and `date_from`/`date_to` support — inconsistent with all other query builder methods |
 
 #### AnalyticsService Fixes
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Services/Analytics/AnalyticsService.php` | `getEmployeeBranchStats()` — replaced raw `Order::whereIn()` for `pending_orders`/`preparing_orders` with `$this->queryBuilder->activeOrders()` | Was bypassing the query builder, missing filter application |
-| `app/Services/Analytics/AnalyticsService.php` | `getStaffSalesMetrics()` — refactored from loading all orders into PHP memory + iterating for payment method breakdowns to a single DB query using conditional `SUM`/`COUNT DISTINCT CASE` | Eliminated N+1 and memory issues at scale |
-| `app/Services/Analytics/AnalyticsService.php` | `getStaffSalesMetrics()` return type changed from `Collection` to `array` | Controller just passes result to `response()->success()` which handles both — `array` is more explicit |
-| `app/Services/Analytics/AnalyticsService.php` | Added `getBranchTodayStatsBulk(array $branchIds)` method — computes revenue and order counts for all branches in 2 GROUP BY queries | Supports new bulk dashboard endpoint to avoid O(N) queries |
+| File                                          | Change                                                                                                                                                                                     | Reason                                                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `app/Services/Analytics/AnalyticsService.php` | `getEmployeeBranchStats()` — replaced raw `Order::whereIn()` for `pending_orders`/`preparing_orders` with `$this->queryBuilder->activeOrders()`                                            | Was bypassing the query builder, missing filter application                                            |
+| `app/Services/Analytics/AnalyticsService.php` | `getStaffSalesMetrics()` — refactored from loading all orders into PHP memory + iterating for payment method breakdowns to a single DB query using conditional `SUM`/`COUNT DISTINCT CASE` | Eliminated N+1 and memory issues at scale                                                              |
+| `app/Services/Analytics/AnalyticsService.php` | `getStaffSalesMetrics()` return type changed from `Collection` to `array`                                                                                                                  | Controller just passes result to `response()->success()` which handles both — `array` is more explicit |
+| `app/Services/Analytics/AnalyticsService.php` | Added `getBranchTodayStatsBulk(array $branchIds)` method — computes revenue and order counts for all branches in 2 GROUP BY queries                                                        | Supports new bulk dashboard endpoint to avoid O(N) queries                                             |
 
 #### Controller Fixes
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Http/Controllers/Api/BranchController.php` | **CRITICAL BUG FIX**: `staffSales()` was passing `start_date`/`end_date` filter keys but query builder expects `date_from`/`date_to` — date filtering was silently ignored, returning ALL dates instead of selected day | Silent data bug — endpoint returned unfiltered data with no errors |
-| `app/Http/Controllers/Api/AdminDashboardController.php` | Refactored from calling `getBranchTodayStats()` per branch in a loop (2N queries for N branches) to using new `getBranchTodayStatsBulk()` method (2 queries total) | N+1 query elimination for dashboard |
+| File                                                    | Change                                                                                                                                                                                                                  | Reason                                                             |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `app/Http/Controllers/Api/BranchController.php`         | **CRITICAL BUG FIX**: `staffSales()` was passing `start_date`/`end_date` filter keys but query builder expects `date_from`/`date_to` — date filtering was silently ignored, returning ALL dates instead of selected day | Silent data bug — endpoint returned unfiltered data with no errors |
+| `app/Http/Controllers/Api/AdminDashboardController.php` | Refactored from calling `getBranchTodayStats()` per branch in a loop (2N queries for N branches) to using new `getBranchTodayStatsBulk()` method (2 queries total)                                                      | N+1 query elimination for dashboard                                |
 
 #### Frontend Contract Alignment (cedibites repo)
 
-| File | Change | Reason |
-|------|--------|--------|
-| `lib/api/services/analytics.service.ts` | `OrderAnalytics`: Added `active_orders: number`, changed `average_prep_time` to `number \| null` | Interface mismatch with backend response |
-| `lib/api/services/analytics.service.ts` | `DeliveryPickupAnalytics`: Added `delivery_revenue` and `pickup_revenue` fields | Missing fields from backend response |
-| `lib/api/services/analytics.service.ts` | `SalesAnalytics`: Added `completed_orders`, `cancelled_orders`, `cancelled_revenue` fields | Missing fields from backend response |
-| `lib/api/services/analytics.service.ts` | `OrderSource`: Added `total_revenue` field | Missing field from backend response |
-| `lib/api/services/branch.service.ts` | Replaced all 5 `any`-typed manager endpoint returns with proper interfaces: `BranchStats` (9 fields), `BranchTopItem` (5 fields), `BranchRevenueChartPoint` (4 fields), `StaffSalesRow` (12 fields) | Eliminated `any` types — compile-time contract enforcement |
+| File                                    | Change                                                                                                                                                                                              | Reason                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `lib/api/services/analytics.service.ts` | `OrderAnalytics`: Added `active_orders: number`, changed `average_prep_time` to `number \| null`                                                                                                    | Interface mismatch with backend response                   |
+| `lib/api/services/analytics.service.ts` | `DeliveryPickupAnalytics`: Added `delivery_revenue` and `pickup_revenue` fields                                                                                                                     | Missing fields from backend response                       |
+| `lib/api/services/analytics.service.ts` | `SalesAnalytics`: Added `completed_orders`, `cancelled_orders`, `cancelled_revenue` fields                                                                                                          | Missing fields from backend response                       |
+| `lib/api/services/analytics.service.ts` | `OrderSource`: Added `total_revenue` field                                                                                                                                                          | Missing field from backend response                        |
+| `lib/api/services/branch.service.ts`    | Replaced all 5 `any`-typed manager endpoint returns with proper interfaces: `BranchStats` (9 fields), `BranchTopItem` (5 fields), `BranchRevenueChartPoint` (4 fields), `StaffSalesRow` (12 fields) | Eliminated `any` types — compile-time contract enforcement |
 
 ### Decisions
 
@@ -155,10 +155,10 @@ Fix bugs, silent data issues, N+1 queries, and frontend-backend contract mismatc
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Triggered By |
-|------|--------|--------|
-| `lib/api/services/analytics.service.ts` | 4 interfaces updated with missing/corrected fields | Backend analytics response audit |
-| `lib/api/services/branch.service.ts` | 4 new typed interfaces replace `any` returns | Branch manager endpoint type safety |
+| File (Frontend repo)                    | Change                                             | Triggered By                        |
+| --------------------------------------- | -------------------------------------------------- | ----------------------------------- |
+| `lib/api/services/analytics.service.ts` | 4 interfaces updated with missing/corrected fields | Backend analytics response audit    |
+| `lib/api/services/branch.service.ts`    | 4 new typed interfaces replace `any` returns       | Branch manager endpoint type safety |
 
 ### Current State
 
