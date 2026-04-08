@@ -22,10 +22,13 @@ class ResponseMacroServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // Success response (200)
-        Response::macro('success', function (mixed $data = null): JsonResponse {
-            return response()->json([
-                'data' => $data,
-            ]);
+        Response::macro('success', function (mixed $data = null, ?string $message = null): JsonResponse {
+            $response = ['data' => $data];
+            if ($message !== null) {
+                $response['message'] = $message;
+            }
+
+            return response()->json($response);
         });
 
         // Paginated response (200) - Uses Laravel's built-in pagination format
