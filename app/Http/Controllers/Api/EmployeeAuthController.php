@@ -36,7 +36,8 @@ class EmployeeAuthController extends Controller
 
         if ($field === 'phone') {
             $digits = preg_replace('/\D/', '', $identifier);
-            $value = str_starts_with($digits, '233') ? $digits : '233'.ltrim($digits, '0');
+            $normalized = str_starts_with($digits, '233') ? $digits : '233'.ltrim($digits, '0');
+            $value = '+'.ltrim($normalized, '+');
         }
 
         if (! Auth::attempt([$field => $value, 'password' => $password])) {
