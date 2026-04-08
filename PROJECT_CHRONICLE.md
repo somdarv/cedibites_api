@@ -104,6 +104,62 @@ Items still needing attention.
 
 ---
 
+## [2026-04-08] Session: Hubtel Callback IP Fix, Deploy Script Fixes, Role Permission Update
+
+### Intent
+
+Fix a critical production bug where all Hubtel payment callbacks were being silently rejected (403) due to a fail-closed IP allowlist with no IPs configured. Also fix deploy scripts that couldn't pull latest code due to divergent branches, and grant `ManageShifts` permission to additional roles.
+
+### Changes Made
+
+#### Hubtel Callback IP Check Fix (CRITICAL)
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Http/Controllers/Api/PaymentController.php` | Reverted `isAllowedCallbackIp()` from fail-closed to fail-open behavior — when `HUBTEL_ALLOWED_IPS` env var is empty/unset, all IPs are allowed; when configured, strict allowlisting applies | **CRITICAL BUG**: During the April 3rd refactor (commit `19c5161`), the method was changed from fail-open to fail-closed. Since `HUBTEL_ALLOWED_IPS` was never configured in production, ALL Hubtel payment callbacks (both RMP and Standard) were silently rejected with 403. MoMo payments completed on customer's end but checkout sessions stayed at `payment_initiated` — no orders created, no receipts printable. |
+
+#### Deploy Script Fixes
+
+| File | Change | Reason |
+|------|--------|--------|
+| `.github/workflows/deploy.yml` | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master`; removed `php artisan optimize` | `git pull` failed on divergent branches, preventing production from receiving code updates. `php artisan optimize` was causing route cache issues. |
+| `.github/workflows/deploy-beta.yml` | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master` | Same divergent branch fix as production deploy script |
+
+#### Role Permission Update
+
+| File | Change | Reason |
+|------|--------|--------|
+| `database/seeders/RoleSeeder.php` | Added `ManageShifts` permission to `sales_staff` and `order_manager` roles | Sales and Order Manager roles need shift management access |
+
+### Decisions
+
+- **Decision**: Fail-open over fail-closed for IP allowlisting when `HUBTEL_ALLOWED_IPS` is empty
+    - **Alternatives**: Keep fail-closed and immediately configure IPs in production
+    - **Rationale**: Callback URL + payload structure provide reasonable protection, and this is how it ran successfully before April 3rd. Low-medium risk. Configuring IPs requires getting Hubtel's callback server IPs from RSE first.
+- **Decision**: Use `git reset --hard origin/master` in deploy scripts instead of `git pull`
+    - **Alternatives**: `git pull --rebase`, manual conflict resolution
+    - **Rationale**: Deploy target should always mirror the remote branch exactly. `reset --hard` prevents future divergence issues and ensures predictable deployments.
+
+### Cross-Repo Impact
+
+- No frontend changes required — these are backend infrastructure and configuration fixes.
+
+### Current State
+
+- **Payment callbacks**: Hubtel callbacks now accepted in production (fail-open when no IPs configured)
+- **Deploy pipeline**: Both production and beta deploy scripts use `git fetch + reset --hard` for reliable code delivery
+- **Route caching**: `php artisan optimize` removed from production deploy — no more route cache issues
+- **Roles**: `sales_staff` and `order_manager` now have `ManageShifts` permission
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- **TODO**: Get Hubtel's callback server IPs from RSE and configure `HUBTEL_ALLOWED_IPS` in production `.env` to enable strict IP allowlisting
+- Verify checkout sessions that were stuck at `payment_initiated` during the outage — may need manual reconciliation
+- Monitor payment callback success rate after fix
+
+---
+
 ## [2026-04-07] Session: Analytics Engine Post-Overhaul Bug Fix
 
 ### Intent
