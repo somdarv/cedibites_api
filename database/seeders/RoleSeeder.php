@@ -116,6 +116,7 @@ class RoleSeeder extends Seeder
             Permission::AccessSalesPortal->value,
             Permission::ViewMySales->value,
             Permission::ViewMyShifts->value,
+            Permission::ManageShifts->value,
         ]);
 
         // Create Kitchen role (kitchen display system)
@@ -160,6 +161,7 @@ class RoleSeeder extends Seeder
             Permission::AccessOrderManager->value,
             Permission::ViewMySales->value,
             Permission::ViewMyShifts->value,
+            Permission::ManageShifts->value,
         ]);
 
     }
