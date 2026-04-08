@@ -104,6 +104,48 @@ Items still needing attention.
 
 ---
 
+## [2026-04-08] Session: Deploy Pipeline Seeding, Response Macro Enhancement, TechAdmin Seeder Removal
+
+### Intent
+
+Automate permission and role seeding on every production deploy so new permissions/roles are always applied without manual SSH. Fix the `response()->success()` macro to support an optional message parameter. Remove the now-unnecessary `TechAdminSeeder`.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `.github/workflows/deploy.yml` | Added `php artisan db:seed --class=PermissionSeeder --force` and `php artisan db:seed --class=RoleSeeder --force` to the production deploy pipeline | Ensures new permissions and roles are automatically applied on every deploy — no manual SSH required |
+| `app/Providers/ResponseMacroServiceProvider.php` | Enhanced the `success()` response macro to accept an optional `?string $message` parameter; when provided, a `message` key is included in the JSON response alongside `data` | Several controller methods were passing a message string as the second argument to `response()->success()` but the macro was silently ignoring it |
+| `database/seeders/TechAdminSeeder.php` | **DELETED** — Removed entirely | TechAdmin user creation is now handled differently; seeder was no longer needed. Deploy workflow reference to it was also removed. |
+
+### Decisions
+
+- **Decision**: Run `PermissionSeeder` and `RoleSeeder` on every deploy rather than only on initial setup
+    - **Rationale**: Seeders are idempotent (they use `syncPermissions`/`syncRoles`). Running them on deploy ensures new permissions added in code are immediately available in production without manual intervention. This was a pain point discovered in the April 7 session where `sales_staff` role was missing from the database.
+- **Decision**: Delete `TechAdminSeeder` rather than deprecate
+    - **Rationale**: The seeder is no longer referenced anywhere and the user creation it handled is done through a different mechanism now. Dead code removal.
+- **Decision**: `success()` macro parameter is optional (`?string $message = null`) with conditional inclusion
+    - **Rationale**: Backward-compatible — existing callers passing only `$data` are unaffected. Callers passing a message now get it included in the response.
+
+### Cross-Repo Impact
+
+No frontend changes required — these are backend infrastructure changes (deploy pipeline, response format enhancement, dead code removal).
+
+### Current State
+
+- **Deploy pipeline**: Production deploys now automatically seed permissions and roles via `PermissionSeeder` and `RoleSeeder`
+- **Response macro**: `response()->success($data, 'Optional message')` now works correctly, including the message in the JSON response
+- **TechAdminSeeder**: Deleted — no longer exists in the codebase
+- **Commit**: `b652396` on `menu-audit`, merged to `master` at `bb6c8ca`, synced to `beta` at `7b9584e`
+- **Branch**: `menu-audit` = `master`
+
+### Pending / Follow-up
+
+- Verify that the next production deploy runs both seeders successfully
+- Audit other response macro methods (`error()`, `unauthorized()`) for similar silent parameter issues
+
+---
+
 ## [2026-04-08] Session: Hubtel Callback IP Fix, Deploy Script Fixes, Role Permission Update
 
 ### Intent
