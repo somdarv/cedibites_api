@@ -220,20 +220,14 @@ class PaymentController extends Controller
     /**
      * Check whether the incoming request originates from an allowed Hubtel IP.
      *
-     * In production, if HUBTEL_ALLOWED_IPS is not configured, reject all callback
-     * requests (fail-closed). In non-production (local/dev), allow all IPs.
+     * When HUBTEL_ALLOWED_IPS is set, only those IPs are allowed. When unset, all
+     * IPs are allowed (configure HUBTEL_ALLOWED_IPS for strict allowlisting).
      */
     private function isAllowedCallbackIp(Request $request): bool
     {
         $allowedIps = config('services.hubtel.allowed_ips');
 
         if (empty($allowedIps)) {
-            if (app()->environment('production')) {
-                \Illuminate\Support\Facades\Log::warning('Hubtel callback rejected: HUBTEL_ALLOWED_IPS not configured in production');
-
-                return false;
-            }
-
             return true;
         }
 
