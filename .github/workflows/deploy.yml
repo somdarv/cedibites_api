@@ -21,6 +21,8 @@ jobs:
             composer install --no-dev --optimize-autoloader
             php artisan config:clear
             php artisan migrate --force
+            php artisan db:seed --class=PermissionSeeder --force
+            php artisan db:seed --class=RoleSeeder --force
             php artisan cache:clear
             php artisan route:clear
             php artisan view:clear
