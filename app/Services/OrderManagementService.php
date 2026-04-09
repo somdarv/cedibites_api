@@ -142,8 +142,8 @@ class OrderManagementService
 
         $updateData = ['status' => $status];
 
-        // Auto-assign employee when order is accepted
-        if ($status === 'accepted' && ! $order->assigned_employee_id && $causer?->employee) {
+        // Auto-assign employee when order is accepted or preparing
+        if (in_array($status, ['accepted', 'preparing']) && ! $order->assigned_employee_id && $causer?->employee) {
             $updateData['assigned_employee_id'] = $causer->employee->id;
         }
 
