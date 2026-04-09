@@ -78,6 +78,8 @@ Route::prefix('admin')->group(function () {
         Route::delete('branches/{branch}', [BranchController::class, 'destroy']);
         Route::patch('branches/{branch}/toggle-status', [BranchController::class, 'toggleDailyStatus']);
         Route::delete('branches/{branch}/manual-override', [BranchController::class, 'clearManualOverride']);
+        Route::patch('branches/{branch}/toggle-extended-staff-access', [BranchController::class, 'toggleExtendedStaffAccess']);
+        Route::patch('branches/{branch}/toggle-extended-order-access', [BranchController::class, 'toggleExtendedOrderAccess']);
     });
 
     Route::middleware('permission:manage_menu')->group(function () {

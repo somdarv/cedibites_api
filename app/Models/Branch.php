@@ -18,7 +18,7 @@ class Branch extends Model
     {
         return LogOptions::defaults()
             ->useLogName('admin')
-            ->logOnly(['name', 'address', 'is_active'])
+            ->logOnly(['name', 'address', 'is_active', 'extended_staff_access', 'extended_order_access'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }
@@ -32,6 +32,8 @@ class Branch extends Model
         'latitude',
         'longitude',
         'is_active',
+        'extended_staff_access',
+        'extended_order_access',
     ];
 
     protected function casts(): array
@@ -40,6 +42,8 @@ class Branch extends Model
             'latitude' => 'decimal:8',
             'longitude' => 'decimal:8',
             'is_active' => 'boolean',
+            'extended_staff_access' => 'boolean',
+            'extended_order_access' => 'boolean',
         ];
     }
 
@@ -158,5 +162,23 @@ class Branch extends Model
         }
 
         return $this->isCurrentlyOpen() ? 'open' : 'closed';
+    }
+
+    /**
+     * Whether staff systems (POS, KDS, Order Manager) are accessible.
+     * True when branch is open normally OR extended_staff_access is enabled.
+     */
+    public function isStaffAccessAllowed(): bool
+    {
+        return $this->isCurrentlyOpen() || $this->extended_staff_access;
+    }
+
+    /**
+     * Whether new orders can be placed via staff systems (POS) outside operating hours.
+     * Requires both extended_staff_access AND extended_order_access.
+     */
+    public function isExtendedOrderAllowed(): bool
+    {
+        return $this->extended_staff_access && $this->extended_order_access;
     }
 }

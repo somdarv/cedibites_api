@@ -19,6 +19,11 @@ class BranchResource extends JsonResource
         // Add computed is_open status based on operating hours
         $data['is_open'] = $this->isCurrentlyOpen();
 
+        // Add extended access flags for staff systems
+        $data['extended_staff_access'] = $this->extended_staff_access;
+        $data['extended_order_access'] = $this->extended_order_access;
+        $data['staff_access_allowed'] = $this->isStaffAccessAllowed();
+
         // Include full menu items if loaded
         if ($this->relationLoaded('menuItems')) {
             $data['menu_items'] = MenuItemResource::collection($this->menuItems);

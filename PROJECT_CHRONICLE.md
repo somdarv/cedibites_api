@@ -104,6 +104,191 @@ Items still needing attention.
 
 ---
 
+## [2026-04-09] Session: Branch Extended Access — After-Hours Staff System Access
+
+### Intent
+
+Add admin-controlled "Extended Access" toggles per branch so staff can continue using POS, Kitchen Display System (KDS), and Order Manager after the branch closes (e.g., for sales reconciliation). A second toggle allows placing new POS orders during extended access (for special/after-hours orders). Customers continue seeing the branch as closed.
+
+### Changes Made
+
+| File                                                                                      | Change                                                                                                                                                                                                                      | Reason                                                                                                    |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `database/migrations/2026_04_09_015228_add_extended_access_columns_to_branches_table.php` | **NEW** — Adds `extended_staff_access` (bool, default false) and `extended_order_access` (bool, default false) to `branches` table                                                                                          | Persistent per-branch flags for extended access                                                           |
+| `app/Models/Branch.php`                                                                   | Added `extended_staff_access`, `extended_order_access` to `$fillable`, `casts()`, and activity log. Added `isStaffAccessAllowed()` (open OR extended_staff_access) and `isExtendedOrderAllowed()` (both flags true) methods | Business logic for staff access checks                                                                    |
+| `app/Http/Resources/BranchResource.php`                                                   | Added `extended_staff_access`, `extended_order_access`, and computed `staff_access_allowed` to API response                                                                                                                 | Frontend needs these flags to gate access                                                                 |
+| `app/Http/Controllers/Api/BranchController.php`                                           | Added `toggleExtendedStaffAccess()` and `toggleExtendedOrderAccess()` methods. Staff toggle automatically disables order access when disabled. Order toggle requires staff access to be enabled first.                      | Admin control endpoints                                                                                   |
+| `app/Http/Controllers/Api/CheckoutSessionController.php`                                  | Added `isCurrentlyOpen()` + `isExtendedOrderAllowed()` check to `posStore()`. Previously POS had no server-side branch-open check.                                                                                          | Server-side enforcement: POS orders blocked when branch is closed UNLESS extended order access is enabled |
+| `routes/admin.php`                                                                        | Added `PATCH branches/{branch}/toggle-extended-staff-access` and `PATCH branches/{branch}/toggle-extended-order-access` routes under `manage_branches` permission                                                           | Route registration for toggle endpoints                                                                   |
+
+### Decisions
+
+- **Decision**: Two separate toggles (Staff Access + Order Access) instead of one
+    - **Rationale**: Restaurant business is dynamic — sometimes staff need access for reconciliation only (no new orders), other times they need to place special after-hours orders. Separate toggles give fine-grained control.
+- **Decision**: Extended access is a persistent per-branch flag, NOT tied to operating hours schedule
+    - **Rationale**: Unlike the existing `manual_override_open` (which is per-day and resets), extended access persists until admin explicitly turns it off.
+- **Decision**: Customers still see the branch as closed during extended access
+    - **Rationale**: `is_open` (customer-facing) is still computed from operating hours. `staff_access_allowed` is a separate computed field for staff systems only.
+- **Decision**: Added server-side POS checkout block
+    - **Rationale**: `posStore()` previously had NO `isCurrentlyOpen()` check (only frontend gate). Now has proper server-side enforcement with extended order access bypass.
+- **Decision**: Disabling Staff Access auto-disables Order Access
+    - **Rationale**: Order Access logically depends on Staff Access. Can't place orders if you can't access the system.
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                          | Change                                                                                               | Impact                                          |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `types/api.ts`                                | Added `extended_staff_access`, `extended_order_access`, `staff_access_allowed` to `Branch` interface | TypeScript type matches `BranchResource` output |
+| `app/components/providers/BranchProvider.tsx` | Maps API fields to camelCase frontend model                                                          | Data layer alignment                            |
+| `lib/api/services/branch.service.ts`          | Added `toggleExtendedStaffAccess()` and `toggleExtendedOrderAccess()` service methods                | Calls admin toggle routes                       |
+| `app/pos/terminal/page.tsx`                   | Branch-closed guard now checks `staffAccessAllowed`                                                  | POS extended access bypass                      |
+| `app/kitchen/layout-client.tsx`               | Added full branch-closed gate (NEW — KDS had no gate before)                                         | KDS extended access bypass                      |
+| `app/order-manager/page.tsx`                  | Existing branch-closed guard updated to check `staffAccessAllowed`                                   | Order Manager extended access bypass            |
+| `app/admin/settings/page.tsx`                 | New "Branch Access" tab with per-branch toggle UI                                                    | Admin control UI                                |
+
+### Current State
+
+- **Branch model**: Has `extended_staff_access` and `extended_order_access` boolean columns (default false)
+- **`isStaffAccessAllowed()`**: Returns true if branch is open OR `extended_staff_access` is true
+- **`isExtendedOrderAllowed()`**: Returns true only if BOTH `extended_staff_access` AND `extended_order_access` are true
+- **`BranchResource`**: Serializes both raw flags + computed `staff_access_allowed`
+- **`posStore()`**: Now validates branch is open or extended order access is enabled (server-side enforcement)
+- **Routes**: Two new `PATCH` routes under `manage_branches` permission
+- **Migration**: Created, needs to be run in production
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Run migration `2026_04_09_015228_add_extended_access_columns_to_branches_table.php` in production
+- Consider broadcasting a WebSocket event when extended access is toggled so POS/KDS/OM update in real-time
+- Consider adding tests for `isStaffAccessAllowed()`, `isExtendedOrderAllowed()`, and the `posStore()` branch-open check
+
+### Future Enhancement: Auto-Expire Extended Access
+
+**Problem**: If an admin enables extended staff/order access and forgets to disable it, staff could have access indefinitely (overnight, next day, etc.).
+
+**Proposed Implementation**:
+
+1. **Migration**: Add `extended_access_expires_at` (nullable datetime) column to `branches` table
+2. **Admin UI**: When enabling extended access, optionally set an expiry duration (e.g., 2h, 4h, 8h, custom) or leave as "Until manually disabled"
+3. **Model Logic**: Update `isStaffAccessAllowed()` to check: `extended_staff_access && (extended_access_expires_at === null || extended_access_expires_at > now())`
+4. **Scheduled Command**: `php artisan schedule:run` — a scheduled task that runs every minute to auto-disable expired extended access: set `extended_staff_access = false, extended_order_access = false, extended_access_expires_at = null` where `extended_access_expires_at <= now()`
+5. **Alternative**: Instead of a scheduled command, just check the expiry in `isStaffAccessAllowed()` and let the next API call handle it lazily. The toggle UI would still show it as "on" until the admin views the page (which refetches), but access would be blocked server-side.
+6. **Notification**: Optionally notify the admin (or broadcast via Reverb) 15 minutes before expiry so they can extend if needed.
+
+---
+
+## [2026-04-09] Session: Master Orchestrator Agent Created (Cross-Repo Reference)
+
+### Intent
+
+Record that a Master Orchestrator agent was created in the **frontend repo** (`cedibites/`) that coordinates all 7 specialized agents across both repos.
+
+### Changes Made
+
+No changes in this repo. The agent file lives in the frontend repo.
+
+| File (Frontend repo)                          | Change                              | Reason                                         |
+| --------------------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `.github/agents/master-orchestrator.agent.md` | **NEW** — Master Orchestrator agent | Central coordinator for all specialized agents |
+
+### Cross-Repo Impact
+
+| File (This repo)                                             | Relationship                                                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `.github/instructions/Engineering-practices.instructions.md` | Critical engineering rules are embedded directly in the orchestrator's Section VII (Quality Gates) |
+| `AGENTS.md`                                                  | Backend agent/boost definitions referenced by the orchestrator's agent registry                    |
+
+### What This Means for Backend Work
+
+- The orchestrator can coordinate multi-repo tasks (e.g., "add a new field" triggers backend migration + API resource + frontend type + UI component)
+- It enforces backend engineering practices (SOLID, service pattern, Eloquent conventions) as quality gates
+- Backend agents (Order Auditor, Analytics Auditor, etc.) can escalate cross-cutting concerns to the orchestrator
+- Pinned to Claude Opus 4 for strong reasoning on complex orchestration
+
+### Current State
+
+- **No backend code changes** — this is an agent tooling addition in the frontend repo
+- **Branch**: `menu-audit`
+
+---
+
+## [2026-04-09] Session: Production 500 Fix — Encrypted Cast on Pre-Existing Plain-Text Ghana Card IDs
+
+### Intent
+
+Investigate and fix a production outage where both the admin staff page (`/admin/staff`) and partner/branch manager staff page (`/partner/staff`) showed "0 staff found" because `GET /admin/employees` returned **500 Internal Server Error**.
+
+### Investigation
+
+- IAM Auditor traced the full request chain: both frontend pages use `useEmployees` hook → `employeeService.getEmployees()` → `GET /admin/employees?per_page=200`.
+- Backend code worked perfectly locally (15 employees returned).
+- Production API was alive (public endpoints responded), but authenticated employee endpoints returned 500.
+- 13 diagnostic SQL queries were run against the production PostgreSQL database.
+
+### Root Cause
+
+- **3 employee records had `ghana_card_id` stored as plain text** (e.g., `GHA-723801`, `GHA-724827`, `GHA-726806`).
+- These values were written **before** the `encrypted` cast was added to the Employee model (commit `dc54239`, April 7).
+- When Laravel tried to load employees, `Crypt::decrypt('GHA-723801')` threw `DecryptException`, crashing the entire paginated query and returning 500 for all users.
+
+### Fix Applied (Production Database)
+
+| Action                                                                          | Detail                               | Reason                                                                                                           |
+| ------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Extracted plain-text Ghana Card IDs                                             | Screenshot taken for safekeeping     | Preserve PII values before nulling                                                                               |
+| `UPDATE employees SET ghana_card_id = NULL WHERE ghana_card_id NOT LIKE 'eyJ%'` | Nulled 3 rows with plain-text values | `eyJ` prefix identifies Laravel-encrypted values; anything else is plain text that will crash `Crypt::decrypt()` |
+
+### Files Involved
+
+| File                                              | Role in Incident                                                                       |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `app/Models/Employee.php`                         | `encrypted` cast on `ghana_card_id` (added in commit `dc54239`, April 7) — the trigger |
+| `app/Http/Controllers/Api/EmployeeController.php` | `index()` method — endpoint that crashed                                               |
+| `app/Http/Resources/EmployeeResource.php`         | Serializes employee data including encrypted fields                                    |
+
+### Decisions
+
+- **Decision**: Null plain-text PII values rather than attempt SQL-level encryption
+    - **Alternatives**: Encrypt values directly in SQL using Laravel's APP_KEY and encryption format
+    - **Rationale**: Laravel's `encrypted` cast uses `APP_KEY` + a specific serialization format (`encrypt()`). Reproducing this in raw SQL is fragile and error-prone. Safer to null and re-enter through the admin UI.
+- **Decision**: Values will be re-entered through the admin UI to be stored with proper encryption
+    - **Rationale**: The UI flows through Laravel's model layer, which applies the `encrypted` cast automatically on write.
+
+### Lessons Learned
+
+- When adding `encrypted` casts to existing model fields, a **data migration** must accompany the schema change to encrypt any existing plain-text values.
+- The `encrypted` cast fails hard (500 `DecryptException`) on non-encrypted data — there is **no graceful fallback**. One bad row crashes the entire paginated query.
+- Consider adding a `try/catch` around encrypted field access in `EmployeeResource` or a boot-time data integrity check to prevent a single corrupt row from taking down an entire listing endpoint.
+
+### Cross-Repo Impact
+
+| File (Frontend repo)                   | Impact                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `lib/api/services/employee.service.ts` | No code change — service was correct; issue was backend 500               |
+| `lib/api/hooks/useEmployees.ts`        | No code change — hook was correct                                         |
+| `app/admin/staff/page.tsx`             | No code change — page rendered "0 staff found" because API returned error |
+| `app/partner/staff/page.tsx`           | No code change — same symptom                                             |
+
+Frontend required **no changes** — the issue was entirely a backend data integrity problem.
+
+### Current State
+
+- **Staff pages**: Both admin and partner staff pages loading correctly in production
+- **Employee data**: 3 employees have `ghana_card_id = NULL` — values need to be re-entered via admin UI
+- **Encrypted cast**: Still active on `Employee.ghana_card_id` — all future writes go through Laravel encryption
+- **No code changes committed** — this was a production database fix only
+- **Branch**: `menu-audit`
+
+### Pending / Follow-up
+
+- Re-enter the 3 nulled Ghana Card IDs through the admin UI (GHA-723801, GHA-724827, GHA-726806)
+- Consider adding a `try/catch` in `EmployeeResource` around encrypted field access to prevent one bad row from crashing the entire listing
+- Consider a data migration strategy for future `encrypted` cast additions: migrate existing plain-text values in the same deployment
+- Audit other models for `encrypted` casts that may have the same pre-existing plain-text data risk
+
+---
+
 ## [2026-04-08] Session: Deploy Pipeline Seeding, Response Macro Enhancement, TechAdmin Seeder Removal
 
 ### Intent
@@ -112,11 +297,11 @@ Automate permission and role seeding on every production deploy so new permissio
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `.github/workflows/deploy.yml` | Added `php artisan db:seed --class=PermissionSeeder --force` and `php artisan db:seed --class=RoleSeeder --force` to the production deploy pipeline | Ensures new permissions and roles are automatically applied on every deploy — no manual SSH required |
+| File                                             | Change                                                                                                                                                                       | Reason                                                                                                                                            |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/deploy.yml`                   | Added `php artisan db:seed --class=PermissionSeeder --force` and `php artisan db:seed --class=RoleSeeder --force` to the production deploy pipeline                          | Ensures new permissions and roles are automatically applied on every deploy — no manual SSH required                                              |
 | `app/Providers/ResponseMacroServiceProvider.php` | Enhanced the `success()` response macro to accept an optional `?string $message` parameter; when provided, a `message` key is included in the JSON response alongside `data` | Several controller methods were passing a message string as the second argument to `response()->success()` but the macro was silently ignoring it |
-| `database/seeders/TechAdminSeeder.php` | **DELETED** — Removed entirely | TechAdmin user creation is now handled differently; seeder was no longer needed. Deploy workflow reference to it was also removed. |
+| `database/seeders/TechAdminSeeder.php`           | **DELETED** — Removed entirely                                                                                                                                               | TechAdmin user creation is now handled differently; seeder was no longer needed. Deploy workflow reference to it was also removed.                |
 
 ### Decisions
 
@@ -156,21 +341,21 @@ Fix a critical production bug where all Hubtel payment callbacks were being sile
 
 #### Hubtel Callback IP Check Fix (CRITICAL)
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                                             | Change                                                                                                                                                                                        | Reason                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `app/Http/Controllers/Api/PaymentController.php` | Reverted `isAllowedCallbackIp()` from fail-closed to fail-open behavior — when `HUBTEL_ALLOWED_IPS` env var is empty/unset, all IPs are allowed; when configured, strict allowlisting applies | **CRITICAL BUG**: During the April 3rd refactor (commit `19c5161`), the method was changed from fail-open to fail-closed. Since `HUBTEL_ALLOWED_IPS` was never configured in production, ALL Hubtel payment callbacks (both RMP and Standard) were silently rejected with 403. MoMo payments completed on customer's end but checkout sessions stayed at `payment_initiated` — no orders created, no receipts printable. |
 
 #### Deploy Script Fixes
 
-| File | Change | Reason |
-|------|--------|--------|
-| `.github/workflows/deploy.yml` | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master`; removed `php artisan optimize` | `git pull` failed on divergent branches, preventing production from receiving code updates. `php artisan optimize` was causing route cache issues. |
-| `.github/workflows/deploy-beta.yml` | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master` | Same divergent branch fix as production deploy script |
+| File                                | Change                                                                                                                          | Reason                                                                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/deploy.yml`      | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master`; removed `php artisan optimize` | `git pull` failed on divergent branches, preventing production from receiving code updates. `php artisan optimize` was causing route cache issues. |
+| `.github/workflows/deploy-beta.yml` | Changed `git pull origin master` to `git fetch origin master && git reset --hard origin/master`                                 | Same divergent branch fix as production deploy script                                                                                              |
 
 #### Role Permission Update
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                              | Change                                                                     | Reason                                                     |
+| --------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `database/seeders/RoleSeeder.php` | Added `ManageShifts` permission to `sales_staff` and `order_manager` roles | Sales and Order Manager roles need shift management access |
 
 ### Decisions
