@@ -537,6 +537,11 @@ class CheckoutSessionController extends Controller
             'session_token' => $session->session_token,
             'status' => 'confirmed',
             'order' => new OrderResource($order),
+            'items' => $session->items,
+            'customer_name' => $session->customer_name,
+            'customer_phone' => $session->customer_phone,
+            'total_amount' => $session->total_amount,
+            'payment_method' => $session->payment_method,
             'change' => round($validated['amount_paid'] - (float) $session->total_amount, 2),
         ], 201);
     }
@@ -592,6 +597,11 @@ class CheckoutSessionController extends Controller
             'session_token' => $session->session_token,
             'status' => 'confirmed',
             'order' => new OrderResource($order),
+            'items' => $session->items,
+            'customer_name' => $session->customer_name,
+            'customer_phone' => $session->customer_phone,
+            'total_amount' => $session->total_amount,
+            'payment_method' => $session->payment_method,
         ], 201);
     }
 
@@ -756,9 +766,11 @@ class CheckoutSessionController extends Controller
         // Switching to MoMo: auto-initiate the payment flow
         if ($newMethod === 'mobile_money' && ! empty($validated['momo_number'])) {
             $momoNumber = PhoneHelper::normalize($validated['momo_number']);
+            $isNewNumber = $session->momo_number !== null && $session->momo_number !== $momoNumber;
 
-            // Enforce 5-minute cooldown between MoMo prompts
-            if ($session->last_momo_sent_at) {
+            // Enforce 5-minute cooldown between MoMo prompts (only for the SAME number)
+            // Changing to a different number should trigger a fresh prompt immediately
+            if (! $isNewNumber && $session->last_momo_sent_at) {
                 $secondsSinceLast = (int) $session->last_momo_sent_at->diffInSeconds(now());
                 $cooldown = 300;
 
@@ -868,8 +880,16 @@ class CheckoutSessionController extends Controller
         }
 
         $query = CheckoutSession::where('session_type', 'pos')
-            ->whereIn('status', ['pending', 'payment_initiated'])
-            ->where('expires_at', '>', now())
+            ->where(function ($q) {
+                $q->where(function ($q2) {
+                    $q2->whereIn('status', ['pending', 'payment_initiated'])
+                        ->where('expires_at', '>', now());
+                })->orWhere(function ($q2) {
+                    // Include recently failed sessions so the POS can show decline notifications
+                    $q2->where('status', 'failed')
+                        ->where('updated_at', '>', now()->subMinutes(2));
+                });
+            })
             ->latest();
 
         if ($branchIds !== null) {
