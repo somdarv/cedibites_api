@@ -368,7 +368,8 @@ class CheckoutSessionController extends Controller
         // Block POS orders when branch is closed unless extended order access is enabled
         if (! $branch->isCurrentlyOpen() && ! $branch->isExtendedOrderAllowed()) {
             return response()->json([
-                'message' => 'This branch is currently closed and extended order access is not enabled.',
+                'code' => 'branch_closed',
+                'message' => 'This branch is currently closed. To place orders after hours, ask an administrator to enable extended order access from the admin settings.',
             ], 422);
         }
 
