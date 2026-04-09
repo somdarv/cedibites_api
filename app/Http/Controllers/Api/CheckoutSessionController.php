@@ -363,6 +363,15 @@ class CheckoutSessionController extends Controller
         $branchId = $validated['branch_id'];
         $this->verifyStaffAuthorization($employee, $branchId);
 
+        $branch = Branch::findOrFail($branchId);
+
+        // Block POS orders when branch is closed unless extended order access is enabled
+        if (! $branch->isCurrentlyOpen() && ! $branch->isExtendedOrderAllowed()) {
+            return response()->json([
+                'message' => 'This branch is currently closed and extended order access is not enabled.',
+            ], 422);
+        }
+
         // Validate menu items belong to branch + resolve DB prices
         $menuItems = $this->validateMenuItems($validated['items'], $branchId);
         $resolvedItems = $this->resolveItemPrices($validated['items'], $menuItems);

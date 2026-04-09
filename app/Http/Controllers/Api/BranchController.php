@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\BranchAccessUpdatedEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
@@ -543,5 +544,54 @@ class BranchController extends Controller
         ]);
 
         return response()->success($rows);
+    }
+
+    /**
+     * Toggle the extended staff access flag for a branch.
+     * When enabled, staff can access POS, KDS, and Order Manager beyond closing hours.
+     */
+    public function toggleExtendedStaffAccess(Branch $branch): JsonResponse
+    {
+        $branch->update([
+            'extended_staff_access' => ! $branch->extended_staff_access,
+        ]);
+
+        // If staff access is being disabled, also disable order access
+        if (! $branch->extended_staff_access) {
+            $branch->update(['extended_order_access' => false]);
+        }
+
+        BranchAccessUpdatedEvent::dispatch($branch->fresh());
+
+        $status = $branch->extended_staff_access ? 'enabled' : 'disabled';
+
+        return response()->success([
+            'extended_staff_access' => $branch->extended_staff_access,
+            'extended_order_access' => $branch->extended_order_access,
+        ], "Extended staff access {$status} for {$branch->name}");
+    }
+
+    /**
+     * Toggle the extended order access flag for a branch.
+     * When enabled (alongside extended_staff_access), staff can place new orders via POS beyond closing hours.
+     */
+    public function toggleExtendedOrderAccess(Branch $branch): JsonResponse
+    {
+        if (! $branch->extended_staff_access) {
+            return response()->error('Extended staff access must be enabled before enabling order access.', 422);
+        }
+
+        $branch->update([
+            'extended_order_access' => ! $branch->extended_order_access,
+        ]);
+
+        BranchAccessUpdatedEvent::dispatch($branch->fresh());
+
+        $status = $branch->extended_order_access ? 'enabled' : 'disabled';
+
+        return response()->success([
+            'extended_staff_access' => $branch->extended_staff_access,
+            'extended_order_access' => $branch->extended_order_access,
+        ], "Extended order access {$status} for {$branch->name}");
     }
 }
