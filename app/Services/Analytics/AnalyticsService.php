@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderStatusHistory;
 use App\Models\Payment;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -848,8 +849,8 @@ class AnalyticsService
     {
         $now = now();
         if ($period === 'week') {
-            $startDate = $now->copy()->startOfWeek();
-            $endDate = $now->copy()->endOfWeek();
+            $startDate = $now->copy()->startOfWeek(Carbon::SUNDAY);
+            $endDate = $now->copy()->endOfWeek(Carbon::SATURDAY);
         } else {
             $startDate = $now->copy()->startOfMonth();
             $endDate = $now->copy()->endOfMonth();

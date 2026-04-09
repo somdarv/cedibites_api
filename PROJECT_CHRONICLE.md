@@ -104,6 +104,50 @@ Items still needing attention.
 
 ---
 
+## [2026-04-09] Session: Manager Dashboard & Shifts Bug Fixes (Backend)
+
+### Intent
+
+Fix two backend bugs surfaced during manager dashboard testing: (1) Revenue chart showing Sunday bar as flat/zero, (2) Staff Sales section showing empty because `assigned_employee_id` was never being set for online orders.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Services/Analytics/AnalyticsService.php` | Added `use Carbon\Carbon;` import. Changed `getBranchRevenueChart()` to use `startOfWeek(Carbon::SUNDAY)` and `endOfWeek(Carbon::SATURDAY)` instead of default Monday start. | Carbon's `startOfWeek()` defaults to Monday. The business week starts Sunday, so Sunday was always the "last" day with no data yet — its bar was perpetually flat. |
+| `app/Services/OrderManagementService.php` | Changed auto-assignment condition from `$status === 'accepted'` to `in_array($status, ['accepted', 'preparing'])`. | Online orders often skip the `accepted` status, going directly to `preparing`. Since auto-assignment only triggered on `accepted`, `assigned_employee_id` was never set for these orders. The Staff Sales query filters on `whereNotNull('assigned_employee_id')`, resulting in empty results. |
+
+### Decisions
+
+- **Decision**: Staff auto-assignment triggers on both `accepted` AND `preparing` transitions
+  - **Alternatives**: Trigger on all non-terminal status changes; backfill existing orders
+  - **Rationale**: `accepted` and `preparing` are the two entry points into the active order flow. Triggering on all transitions would be redundant and could overwrite manual assignments. Covers both manual acceptance and direct-to-preparing flows.
+- **Decision**: Week starts on Sunday (`Carbon::SUNDAY`) for revenue chart
+  - **Alternatives**: Keep Monday start matching Carbon default; make it configurable
+  - **Rationale**: Matches business convention — the restaurant week runs Sunday through Saturday. A configurable setting adds complexity with no current need.
+- **Decision**: Do NOT retroactively fix existing orders without `assigned_employee_id`
+  - **Rationale**: Determining the correct staff member for historical orders is ambiguous (who actually handled it?). The fix applies going forward. A backfill migration could be considered separately if historical accuracy matters.
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|------|--------|--------|
+| `app/staff/manager/dashboard/page.tsx` | Added `cancel_requested` to `STATUS_STYLES`, added info block for cancel-requested orders, disabled cancel button when status is `cancel_requested`, added `cancel_requested` to active orders KPI filter | Fixes cancel "double-fire" 422 error and corrects Active Orders count |
+| `app/staff/manager/shifts/page.tsx` | Full rewrite (~480 lines) to match `MyShiftsView` layout pattern — hero card, today's summary, collapsible calendar, extracted `ShiftCard` component | Visual consistency between staff and manager shift views |
+
+### Current State
+
+- **Revenue Chart**: Week runs Sunday–Saturday. Sunday bar now shows actual data instead of being perpetually flat.
+- **Staff Sales**: `assigned_employee_id` is now set when orders transition to either `accepted` or `preparing`. Staff Sales query will return results going forward.
+- **Limitation**: Historical orders placed before this fix that skipped `accepted` still have `NULL` `assigned_employee_id` and won't appear in Staff Sales.
+
+### Pending / Follow-up
+
+- Consider a one-time data migration to backfill `assigned_employee_id` for historical orders if staff sales reporting accuracy for past data is important
+- Monitor staff sales data over the next few days to confirm the fix is working as expected
+
+---
+
 ## [2026-04-09] Session: WebSocket Broadcast & POS Error UX for Branch Access
 
 ### Intent
