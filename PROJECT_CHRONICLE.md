@@ -2,7 +2,7 @@
 
 > **Purpose**: Living record of all changes, decisions, and current state of the CediBites Laravel API. Maintained by the Project Chronicle agent. Read this before starting work on any area.
 
-> **Current Branch**: `menu-audit` (off `master`)
+> **Current Branch**: `master` / `beta` (synced)
 
 ---
 
@@ -104,6 +104,50 @@ Items still needing attention.
 
 ---
 
+## [2026-04-09] Session: WebSocket Broadcast & POS Error UX for Branch Access
+
+### Intent
+
+Make branch extended access toggles propagate in real-time to all connected POS/KDS/Order Manager clients via WebSocket broadcast, and improve the POS error UX when an order is rejected because the branch is closed.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Events/BranchAccessUpdatedEvent.php` | **NEW** — Created `BranchAccessUpdatedEvent` implementing `ShouldBroadcast`. Broadcasts on `orders.branch.{branch_id}` private channel with broadcast name `.branch.access.updated`. Payload: `branch_id`, `extended_staff_access`, `extended_order_access`, `staff_access_allowed` | Real-time propagation of access changes to all staff clients listening on the branch channel |
+| `app/Http/Controllers/Api/BranchController.php` | Added `use App\Events\BranchAccessUpdatedEvent` import. Both `toggleExtendedStaffAccess()` and `toggleExtendedOrderAccess()` now dispatch `BranchAccessUpdatedEvent::dispatch($branch->fresh())` after updating the branch | Triggers WebSocket broadcast when admin toggles access |
+| `app/Http/Controllers/Api/CheckoutSessionController.php` | Updated branch-closed error response in `posStore()` to include `code: 'branch_closed'` field. Changed message to user-friendly: "This branch is currently closed. To place orders after hours, ask an administrator to enable extended order access from the admin settings." | Frontend can distinguish branch-closed errors from generic 422s and show appropriate UI |
+
+### Decisions
+
+- **Decision**: Reuse existing `orders.branch.{branch_id}` channel instead of creating a new channel
+    - **Alternatives**: Create a dedicated `branch.access.{id}` channel
+    - **Rationale**: Staff are already subscribed to `orders.branch.{id}` for order updates. Reusing it means zero additional auth/subscription logic needed. The `.branch.access.updated` broadcast name is completely separate from `.order.updated` — no interference.
+- **Decision**: Add a `code` field (`branch_closed`) to the 422 error response
+    - **Alternatives**: Use HTTP status code differentiation, use a different error message format
+    - **Rationale**: HTTP status alone (422) is shared with other validation errors. A `code` field lets the frontend programmatically identify the specific error type and show contextual UI (modal vs toast).
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|------|--------|--------|
+| `app/components/providers/BranchProvider.tsx` | Added WebSocket listener for `.branch.access.updated` on branch channel — invalidates `['branches']` query cache on event | Instant branch data refresh when admin toggles access |
+| `app/pos/terminal/page.tsx` | Added `branchClosedNotice` state and modal — detects `code === 'branch_closed'` from API response | POS shows a modal instead of a toast for branch-closed errors |
+
+### Current State
+
+- **`BranchAccessUpdatedEvent`**: New broadcast event, broadcasts on existing private channel with separate event name
+- **`BranchController`**: Both toggle methods dispatch the broadcast event after update
+- **`posStore()` error**: Returns `code: 'branch_closed'` with user-friendly message when branch is closed and extended order access is disabled
+- **Deployed**: Committed on `manager-staff-fixes`, merged to `master` and `beta`
+
+### Pending / Follow-up
+
+- Consider adding tests for the broadcast event dispatch in toggle endpoints
+- Monitor WebSocket event delivery in production to ensure Reverb handles the broadcast correctly
+
+---
+
 ## [2026-04-09] Session: Branch Extended Access — After-Hours Staff System Access
 
 ### Intent
@@ -160,7 +204,7 @@ Add admin-controlled "Extended Access" toggles per branch so staff can continue 
 ### Pending / Follow-up
 
 - Run migration `2026_04_09_015228_add_extended_access_columns_to_branches_table.php` in production
-- Consider broadcasting a WebSocket event when extended access is toggled so POS/KDS/OM update in real-time
+- ~~Consider broadcasting a WebSocket event when extended access is toggled so POS/KDS/OM update in real-time~~ — **DONE** in [2026-04-09] WebSocket Broadcast & POS Error UX session
 - Consider adding tests for `isStaffAccessAllowed()`, `isExtendedOrderAllowed()`, and the `posStore()` branch-open check
 
 ### Future Enhancement: Auto-Expire Extended Access
