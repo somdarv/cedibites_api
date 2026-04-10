@@ -137,6 +137,26 @@ class AdminAnalyticsController extends Controller
         );
     }
 
+    public function discountUsage(Request $request): JsonResponse
+    {
+        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
+
+        return response()->success(
+            $this->analyticsService->getDiscountUsageMetrics($filters),
+            'Discount usage analytics retrieved successfully.'
+        );
+    }
+
+    public function cancellationReasons(Request $request): JsonResponse
+    {
+        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
+
+        return response()->success(
+            $this->analyticsService->getCancellationReasonsMetrics($filters),
+            'Cancellation reasons analytics retrieved successfully.'
+        );
+    }
+
     public function checkoutFunnel(Request $request): JsonResponse
     {
         $filters = $request->only(['date_from', 'date_to', 'branch_id']);

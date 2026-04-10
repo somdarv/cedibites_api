@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\MenuItem;
+use App\Models\Promo;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
@@ -33,6 +34,11 @@ class LocalOperationalDataSeeder extends Seeder
 
     /** @var array<int, float> */
     private array $deliveryFees = [];
+
+    /** @var Collection<int, Promo> */
+    private Collection $promos;
+
+    private int $yearsToSeed = 3;
 
     // ── Ghanaian name pools ──────────────────────────────────────────────────
 
@@ -71,7 +77,7 @@ class LocalOperationalDataSeeder extends Seeder
             return;
         }
 
-        $this->command->info('Seeding ~1 year of operational data (local only)...');
+        $this->command->info("Seeding ~{$this->yearsToSeed} years of operational data (local only)...");
         $start = microtime(true);
 
         $this->boot();
@@ -105,6 +111,7 @@ class LocalOperationalDataSeeder extends Seeder
             $this->deliveryFees[$b->id] = $ds ? (float) $ds->base_delivery_fee : 15.00;
         }
 
+        $this->promos = Promo::all();
         $this->orderSeq = (int) DB::table('orders')->count();
     }
 
@@ -121,9 +128,11 @@ class LocalOperationalDataSeeder extends Seeder
             return;
         }
 
+        $registeredCount = $this->yearsToSeed * 40;
+        $guestCount = $this->yearsToSeed * 15;
         $names = array_merge(self::MALE, self::FEMALE);
 
-        for ($i = 1; $i <= 60; $i++) {
+        for ($i = 1; $i <= $registeredCount; $i++) {
             $first = $names[array_rand($names)];
             $last = self::SURNAMES[array_rand(self::SURNAMES)];
             $email = Str::lower($first).'.'.Str::lower($last).$i.'@example.com';
@@ -163,7 +172,7 @@ class LocalOperationalDataSeeder extends Seeder
             }
         }
 
-        for ($i = 1; $i <= 20; $i++) {
+        for ($i = 1; $i <= $guestCount; $i++) {
             $cust = Customer::create([
                 'user_id' => null,
                 'is_guest' => true,
@@ -290,7 +299,7 @@ class LocalOperationalDataSeeder extends Seeder
 
     private function seedOrders(): void
     {
-        $startDate = Carbon::now()->subYear()->startOfDay();
+        $startDate = Carbon::now()->subYears($this->yearsToSeed)->startOfDay();
         $endDate = Carbon::now()->startOfDay();
         $totalDays = max((int) $startDate->diffInDays($endDate), 1);
 
@@ -298,17 +307,18 @@ class LocalOperationalDataSeeder extends Seeder
             ->filter(fn ($e) => $e->user?->hasAnyRole(['sales_staff', 'manager']))
             ->values();
 
-        $this->command->info('  Generating orders for ~365 days...');
+        $this->command->info("  Generating orders for ~{$totalDays} days ({$this->yearsToSeed} years)...");
 
-        $allOrders = [];
-        $orderMeta = [];
+        $batchOrders = [];
+        $batchMeta = [];
         $totalCount = 0;
+        $batchSize = 200;
 
         $date = $startDate->copy();
 
         while ($date->lte($endDate)) {
             $dayIndex = (int) $startDate->diffInDays($date);
-            $growth = 0.5 + 0.5 * ($dayIndex / $totalDays);
+            $growth = 0.25 + 0.75 * ($dayIndex / $totalDays);
             $dow = $date->dayOfWeek;
 
             $base = match (true) {
@@ -379,7 +389,26 @@ class LocalOperationalDataSeeder extends Seeder
 
                 $deliveryFee = $type === 'delivery' ? $this->deliveryFees[$branch->id] : 0;
                 $serviceCharge = $source === 'pos' ? 0 : round($subtotal * 0.025, 2);
-                $total = round($subtotal + $deliveryFee + $serviceCharge, 2);
+
+                // Apply promo discount to ~12% of orders
+                $discount = 0.0;
+                $promoId = null;
+                $promoName = null;
+                if (rand(1, 100) <= 12 && $this->promos->isNotEmpty()) {
+                    $promo = $this->promos->random();
+                    if ($subtotal >= (float) ($promo->min_order_value ?? 0)) {
+                        $promoId = $promo->id;
+                        $promoName = $promo->name;
+                        $discount = $promo->type === 'percentage'
+                            ? round($subtotal * ((float) $promo->value / 100), 2)
+                            : (float) $promo->value;
+                        if ($promo->max_discount && $discount > (float) $promo->max_discount) {
+                            $discount = (float) $promo->max_discount;
+                        }
+                    }
+                }
+
+                $total = round(max(0, $subtotal + $deliveryFee + $serviceCharge - $discount), 2);
 
                 $status = $this->randomStatus($date, $type);
                 $statusChain = $this->statusChain($status, $orderTime, $type);
@@ -391,7 +420,7 @@ class LocalOperationalDataSeeder extends Seeder
 
                 $lastStatusTime = ! empty($statusChain) ? end($statusChain)['changed_at'] : $orderTime->toDateTimeString();
 
-                $allOrders[] = [
+                $batchOrders[] = [
                     'order_number' => $orderNumber,
                     'customer_id' => $customer->id,
                     'branch_id' => $branch->id,
@@ -407,6 +436,9 @@ class LocalOperationalDataSeeder extends Seeder
                     'subtotal' => $subtotal,
                     'delivery_fee' => $deliveryFee,
                     'service_charge' => $serviceCharge,
+                    'discount' => $discount,
+                    'promo_id' => $promoId,
+                    'promo_name' => $promoName,
                     'total_amount' => $total,
                     'status' => $status,
                     'estimated_prep_time' => rand(15, 45),
@@ -421,7 +453,7 @@ class LocalOperationalDataSeeder extends Seeder
                     'updated_at' => $lastStatusTime,
                 ];
 
-                $orderMeta[$orderNumber] = [
+                $batchMeta[$orderNumber] = [
                     'items' => $itemRows,
                     'statuses' => $statusChain,
                     'payment' => [
@@ -440,13 +472,23 @@ class LocalOperationalDataSeeder extends Seeder
                 ];
 
                 $totalCount++;
+
+                // Flush every $batchSize orders to keep memory low
+                if (count($batchOrders) >= $batchSize) {
+                    $this->flushOrders($batchOrders, $batchMeta);
+                    $batchOrders = [];
+                    $batchMeta = [];
+                }
             }
 
             $date->addDay();
         }
 
-        $this->command->info("  Inserting {$totalCount} orders...");
-        $this->flushOrders($allOrders, $orderMeta);
+        // Flush remaining orders
+        if (! empty($batchOrders)) {
+            $this->flushOrders($batchOrders, $batchMeta);
+        }
+
         $this->command->info("  Orders: {$totalCount}");
     }
 
@@ -513,7 +555,7 @@ class LocalOperationalDataSeeder extends Seeder
             return;
         }
 
-        $startDate = Carbon::now()->subYear()->startOfDay();
+        $startDate = Carbon::now()->subYears($this->yearsToSeed)->startOfDay();
         $endDate = Carbon::now()->startOfDay();
 
         $shifts = [];

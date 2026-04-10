@@ -116,7 +116,7 @@ class AnalyticsQueryBuilder
      * OrderItem query joined to orders — for item-level analytics.
      * Includes both completed and no_charge orders (represents real demand).
      */
-    public function orderItems(array $filters = []): \Illuminate\Database\Query\Builder
+    public function orderItems(array $filters = []): Builder|\Illuminate\Database\Query\Builder
     {
         $query = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
@@ -135,7 +135,7 @@ class AnalyticsQueryBuilder
     /**
      * Payment query joined to orders — for payment-level analytics.
      */
-    public function payments(array $filters = [], string $paymentStatus = 'completed'): \Illuminate\Database\Query\Builder
+    public function payments(array $filters = [], string $paymentStatus = 'completed'): Builder|\Illuminate\Database\Query\Builder
     {
         $query = Payment::query()
             ->join('orders', 'payments.order_id', '=', 'orders.id')

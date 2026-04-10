@@ -166,27 +166,28 @@ class AnalyticsService
 
         // Top customers by orders — using revenue-contributing orders
         $revenueSubquery = $this->queryBuilder->revenueOrders($filters)->select('id');
+        $revenueOrderIds = (clone $revenueSubquery)->pluck('id');
 
         $topByOrders = Customer::query()
-            ->withCount(['orders as placed_order_count' => fn ($q) => $q->whereIn('orders.id', $revenueSubquery)])
+            ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $revenueOrderIds))
+            ->withCount(['orders as placed_order_count' => fn ($q) => $q->whereIn('orders.id', $revenueOrderIds)])
             ->addSelect([
                 'total_spend' => Order::selectRaw('SUM(total_amount)')
                     ->whereColumn('customer_id', 'customers.id')
-                    ->whereIn('id', $revenueSubquery),
+                    ->whereIn('id', $revenueOrderIds),
             ])
-            ->having('placed_order_count', '>', 0)
             ->orderByDesc('placed_order_count')
             ->limit(10)
             ->get();
 
         // Top customers by spending
         $topBySpending = Customer::query()
+            ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $revenueOrderIds))
             ->addSelect([
                 'total_spend' => Order::selectRaw('SUM(total_amount)')
                     ->whereColumn('customer_id', 'customers.id')
-                    ->whereIn('id', $revenueSubquery),
+                    ->whereIn('id', $revenueOrderIds),
             ])
-            ->having('total_spend', '>', 0)
             ->orderByDesc('total_spend')
             ->limit(10)
             ->get();
@@ -596,6 +597,56 @@ class AnalyticsService
             'total_discount' => round($p->total_discount, 2),
             'revenue_generated' => round($p->revenue_generated, 2),
         ])->sortByDesc('usage_count')->values()->toArray();
+    }
+
+    // ─── L2. DISCOUNT USAGE METRICS ─────────────────────────────────
+
+    public function getDiscountUsageMetrics(array $filters = []): array
+    {
+        $placedQuery = $this->queryBuilder->placedOrders($filters);
+
+        $totalOrders = (clone $placedQuery)->count();
+
+        $discountedQuery = (clone $placedQuery)->where('discount', '>', 0);
+        $discountedCount = (clone $discountedQuery)->count();
+        $totalDiscount = round((float) (clone $discountedQuery)->sum('discount'), 2);
+        $avgDiscount = $discountedCount > 0 ? round($totalDiscount / $discountedCount, 2) : 0;
+
+        return [
+            'total_orders' => $totalOrders,
+            'discounted_orders' => $discountedCount,
+            'discount_rate' => $totalOrders > 0 ? round(($discountedCount / $totalOrders) * 100, 1) : 0,
+            'total_discount_given' => $totalDiscount,
+            'avg_discount_per_order' => $avgDiscount,
+            'promos' => $this->getPromoMetrics($filters),
+        ];
+    }
+
+    // ─── L3. CANCELLATION REASONS METRICS ─────────────────────────────
+
+    public function getCancellationReasonsMetrics(array $filters = []): array
+    {
+        $cancelledQuery = $this->queryBuilder->cancelledOrders($filters);
+
+        $totalCancelled = (clone $cancelledQuery)->count();
+
+        $reasons = (clone $cancelledQuery)
+            ->select(
+                DB::raw("COALESCE(cancelled_reason, 'Unspecified') as reason"),
+                DB::raw('COUNT(*) as count')
+            )
+            ->groupBy(DB::raw("COALESCE(cancelled_reason, 'Unspecified')"))
+            ->orderByDesc('count')
+            ->get();
+
+        return [
+            'total_cancelled' => $totalCancelled,
+            'reasons' => $reasons->map(fn ($r) => [
+                'reason' => $r->reason,
+                'count' => (int) $r->count,
+                'pct' => $totalCancelled > 0 ? round(($r->count / $totalCancelled) * 100, 1) : 0,
+            ])->values()->toArray(),
+        ];
     }
 
     // ─── M. CHECKOUT FUNNEL METRICS ─────────────────────────────────
