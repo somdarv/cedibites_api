@@ -169,6 +169,7 @@ class AnalyticsService
         $revenueOrderIds = (clone $revenueSubquery)->pluck('id');
 
         $topByOrders = Customer::query()
+            ->with(['user', 'orders' => fn ($q) => $q->latest()->limit(1)])
             ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $revenueOrderIds))
             ->withCount(['orders as placed_order_count' => fn ($q) => $q->whereIn('orders.id', $revenueOrderIds)])
             ->addSelect([
@@ -178,10 +179,17 @@ class AnalyticsService
             ])
             ->orderByDesc('placed_order_count')
             ->limit(10)
-            ->get();
+            ->get()
+            ->map(fn ($c) => [
+                'id' => $c->id,
+                'name' => $c->user?->name ?? $c->orders->first()?->contact_name ?? 'Guest',
+                'orders_count' => (int) $c->placed_order_count,
+                'total_spend' => round((float) ($c->total_spend ?? 0), 2),
+            ]);
 
         // Top customers by spending
         $topBySpending = Customer::query()
+            ->with(['user', 'orders' => fn ($q) => $q->latest()->limit(1)])
             ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $revenueOrderIds))
             ->addSelect([
                 'total_spend' => Order::selectRaw('SUM(total_amount)')
@@ -190,7 +198,13 @@ class AnalyticsService
             ])
             ->orderByDesc('total_spend')
             ->limit(10)
-            ->get();
+            ->get()
+            ->map(fn ($c) => [
+                'id' => $c->id,
+                'name' => $c->user?->name ?? $c->orders->first()?->contact_name ?? 'Guest',
+                'orders_count' => (int) ($c->placed_order_count ?? $c->orders_count ?? 0),
+                'total_spend' => round((float) ($c->total_spend ?? 0), 2),
+            ]);
 
         // New customers in last 30 days (always computed, not date-dependent)
         $thirtyDaysAgo = now()->subDays(30)->toDateString();

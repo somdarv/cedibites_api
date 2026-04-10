@@ -32,7 +32,13 @@ class ShiftController extends Controller
             ->when($request->date, fn ($q, $date) => $q->whereDate('login_at', $date))
             ->orderByDesc('login_at');
 
-        if (! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
+        if ($request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
+            // Admins see all shifts
+        } elseif ($request->user()?->hasRole(Role::Manager)) {
+            // Managers see shifts for their assigned branches
+            $branchIds = $employee->branches()->pluck('branches.id');
+            $query->whereIn('branch_id', $branchIds);
+        } else {
             $query->where('employee_id', $employee->id);
         }
 
@@ -192,7 +198,14 @@ class ShiftController extends Controller
             ->whereDate('login_at', $date)
             ->orderByDesc('login_at');
 
-        if (! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
+        if ($request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
+            // Admins see all shifts
+        } elseif ($request->user()?->hasRole(Role::Manager)) {
+            // Managers see shifts for their assigned branches
+            $branchIds = $employee->branches()->pluck('branches.id');
+            $query->whereIn('branch_id', $branchIds);
+        } else {
+            // Regular staff only see their own shifts
             $query->where('employee_id', $employee->id);
         }
 
@@ -211,15 +224,25 @@ class ShiftController extends Controller
             return response()->forbidden('User is not an employee');
         }
 
-        if ((string) $employee->id !== $staffId && ! $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin])) {
+        $isAdminOrTech = $request->user()?->hasAnyRole([Role::Admin, Role::TechAdmin]);
+        $isManager = $request->user()?->hasRole(Role::Manager);
+
+        if ((string) $employee->id !== $staffId && ! $isAdminOrTech && ! $isManager) {
             return response()->forbidden('Cannot view another employee\'s shifts');
         }
 
-        $shifts = Shift::query()
+        $query = Shift::query()
             ->with(['employee.user', 'branch', 'shiftOrders.order'])
             ->where('employee_id', $staffId)
-            ->orderByDesc('login_at')
-            ->get();
+            ->orderByDesc('login_at');
+
+        // If manager, scope to their branch(es)
+        if ($isManager && ! $isAdminOrTech) {
+            $branchIds = $employee->branches()->pluck('branches.id');
+            $query->whereIn('branch_id', $branchIds);
+        }
+
+        $shifts = $query->get();
 
         return response()->success(ShiftResource::collection($shifts));
     }

@@ -104,6 +104,53 @@ Items still needing attention.
 
 ---
 
+## [2026-04-10] Session: Analytics, Customer Sort, Shift Access Fixes
+
+### Intent
+
+Fix three backend bugs: (1) Admin analytics top customers showing no names/order counts, (2) Customer "Highest Spend" sort broken due to NULL values, (3) Manager shifts page only showing the manager's own sessions instead of all branch staff.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Services/Analytics/AnalyticsService.php` | `getCustomerMetrics()` now eager-loads `['user', 'orders' => fn($q) => $q->latest()->limit(1)]`. Results mapped to plain arrays with `name` resolved via chain: `user.name → order.contact_name → 'Guest'`. Includes `orders_count` and `total_spend`. | Top customers returned raw Customer models without user relationship loaded — Customer model has no `name` field (name lives on User model; guest names on Order.contact_name) |
+| `app/Http/Controllers/Api/CustomerController.php` | Changed `->orderByDesc('total_spend')` to `->orderByRaw('COALESCE(total_spend, 0) DESC')` | `withSum` produces NULL for customers with no completed/delivered orders. MySQL sorts NULLs inconsistently, breaking "Highest Spend" sort |
+| `app/Http/Controllers/Api/ShiftController.php` | Updated `index()`, `getByDate()`, and `getByStaff()` with three-tier access: Admin/TechAdmin → see all shifts; Manager → see shifts within assigned branches via `$employee->branches()->pluck('branches.id')`; Regular staff → own shifts only | Previously only Admin/TechAdmin had a bypass — all other roles (including Manager) were restricted to their own shifts via `where('employee_id', $employee->id)` |
+
+### Decisions
+
+- **Decision**: Top customer name resolution uses a fallback chain: `user.name` → `order.contact_name` → `'Guest'`
+  - **Rationale**: Registered customers have a User record. Guest customers only have a name on their Order. Some have neither. The chain covers all cases.
+- **Decision**: Manager shift access scoped to their assigned branches (not all branches)
+  - **Rationale**: Managers should only see shifts in branches they manage. Admin/TechAdmin retain full visibility.
+- **Decision**: Use `COALESCE(total_spend, 0)` rather than defaulting NULL in the model
+  - **Rationale**: Fixing at query level is more explicit and doesn't affect other uses of `total_spend`.
+
+### Current State
+
+- **Analytics top customers**: Returns name, orders_count, total_spend as plain arrays — frontend can display immediately
+- **Customer sort**: NULL spend values sorted as 0 (bottom of descending order)
+- **Shift access**: Manager role sees all branch staff shifts across `index`, `getByDate`, and `getByStaff` endpoints
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|------|--------|--------|
+| `app/admin/analytics/page.tsx` | Top customers reduced to 5, added Last Month + Lifetime periods | UI matches new backend data shape |
+| `lib/api/hooks/useAnalytics.ts` | Added `last_month` and `lifetime` period types | New date ranges for admin analytics |
+| `app/staff/manager/analytics/page.tsx` | Full period-driven rewrite with 7 date range options | Manager analytics now has rich filtering |
+| Multiple ordering surfaces | Added `is_available: true` to menu fetchers | Menu toggle now works end-to-end |
+| `app/staff/manager/settings/page.tsx` | Branch status accounts for operating hours | Correct open/closed display |
+| `app/globals.css` | Global slim scrollbar styling | UI polish |
+
+### Pending / Follow-up
+
+- Consider backfilling `NULL` `total_spend` values in the database for cleaner queries
+- Monitor shift query performance with branch-scoped filtering
+
+---
+
 ## [2026-04-09] Session: Manager Dashboard & Shifts Bug Fixes (Backend)
 
 ### Intent
