@@ -66,10 +66,20 @@ class AnalyticsService
             ->groupBy('order_type')
             ->get();
 
-        // Average items per order
+        // Average items per order + supporting stats
         $revenueOrderIds = (clone $this->queryBuilder->revenueOrders($filters))->select('id');
         $totalItems = \App\Models\OrderItem::whereIn('order_id', $revenueOrderIds)->sum('quantity');
         $avgItemsPerOrder = $revenueOrderCount > 0 ? round($totalItems / $revenueOrderCount, 1) : 0;
+
+        // Items-per-order distribution
+        $itemCounts = \App\Models\OrderItem::whereIn('order_id', $revenueOrderIds)
+            ->select('order_id', DB::raw('SUM(quantity) as item_count'))
+            ->groupBy('order_id')
+            ->get();
+        $singleItemOrders = $itemCounts->where('item_count', 1)->count();
+        $multiItemOrders = $itemCounts->where('item_count', '>', 1)->count();
+        $maxItemsInOrder = (int) ($itemCounts->max('item_count') ?? 0);
+        $singleItemPct = $revenueOrderCount > 0 ? round(($singleItemOrders / $revenueOrderCount) * 100) : 0;
 
         return [
             'total_sales' => $grossRevenue,
@@ -83,6 +93,9 @@ class AnalyticsService
             'sales_by_day' => $salesByDay,
             'sales_by_type' => $salesByType,
             'avg_items_per_order' => $avgItemsPerOrder,
+            'single_item_orders_pct' => $singleItemPct,
+            'multi_item_orders' => $multiItemOrders,
+            'max_items_in_order' => $maxItemsInOrder,
         ];
     }
 
@@ -164,14 +177,18 @@ class AnalyticsService
             )->count();
         }
 
-        // Top customers by orders — using revenue-contributing orders
+        // Top customers by fulfilled orders — only completed/delivered count
         $revenueSubquery = $this->queryBuilder->revenueOrders($filters)->select('id');
         $revenueOrderIds = (clone $revenueSubquery)->pluck('id');
 
+        $fulfilledOrderIds = Order::whereIn('id', $revenueOrderIds)
+            ->whereIn('status', ['completed', 'delivered'])
+            ->pluck('id');
+
         $topByOrders = Customer::query()
             ->with(['user', 'orders' => fn ($q) => $q->latest()->limit(1)])
-            ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $revenueOrderIds))
-            ->withCount(['orders as placed_order_count' => fn ($q) => $q->whereIn('orders.id', $revenueOrderIds)])
+            ->whereHas('orders', fn ($q) => $q->whereIn('orders.id', $fulfilledOrderIds))
+            ->withCount(['orders as placed_order_count' => fn ($q) => $q->whereIn('orders.id', $fulfilledOrderIds)])
             ->addSelect([
                 'total_spend' => Order::selectRaw('SUM(total_amount)')
                     ->whereColumn('customer_id', 'customers.id')
@@ -370,21 +387,21 @@ class AnalyticsService
      */
     public function getStaffSalesMetrics(array $filters = []): array
     {
-        // Build base query: placed, not cancelled, assigned to staff, joined with payments
+        // Build base query: placed, not cancelled, joined with payments
+        // Include unassigned orders in a separate bucket
         $baseQuery = $this->queryBuilder->placedOrders($filters)
             ->where('status', '!=', 'cancelled')
-            ->whereNotNull('assigned_employee_id')
             ->join('payments', function ($join) {
                 $join->on('payments.order_id', '=', 'orders.id')
                     ->whereIn('payments.payment_status', ['completed', 'no_charge']);
             })
-            ->join('employees', 'orders.assigned_employee_id', '=', 'employees.id')
-            ->join('users', 'employees.user_id', '=', 'users.id');
+            ->leftJoin('employees', 'orders.assigned_employee_id', '=', 'employees.id')
+            ->leftJoin('users', 'employees.user_id', '=', 'users.id');
 
         $rows = $baseQuery
             ->select(
-                'orders.assigned_employee_id as employee_id',
-                'users.name as staff_name',
+                DB::raw('COALESCE(orders.assigned_employee_id, 0) as employee_id'),
+                DB::raw("COALESCE(users.name, 'Unassigned') as staff_name"),
                 DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
                 // MoMo
                 DB::raw("SUM(CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as momo_total"),
@@ -399,7 +416,7 @@ class AnalyticsService
                 DB::raw("SUM(CASE WHEN payments.payment_status = 'no_charge' THEN orders.total_amount ELSE 0 END) as no_charge_total"),
                 DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_status = 'no_charge' THEN orders.id END) as no_charge_count"),
             )
-            ->groupBy('orders.assigned_employee_id', 'users.name')
+            ->groupBy(DB::raw('COALESCE(orders.assigned_employee_id, 0)'), DB::raw("COALESCE(users.name, 'Unassigned')"))
             ->orderByDesc(DB::raw("SUM(CASE WHEN payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END)"))
             ->get();
 
@@ -436,18 +453,28 @@ class AnalyticsService
 
         $totalOrders = $orderTypes->sum('count');
 
+        // Build dynamic breakdown for all order types
+        $types = $orderTypes->map(function ($row) use ($query, $totalOrders) {
+            $revenue = (clone $query)->where('order_type', $row->order_type)->sum('total_amount');
+
+            return [
+                'type' => $row->order_type,
+                'label' => ucfirst(str_replace('_', ' ', $row->order_type)),
+                'pct' => $totalOrders > 0 ? round(($row->count / $totalOrders) * 100) : 0,
+                'revenue' => round((float) $revenue, 2),
+            ];
+        })->sortByDesc('pct')->values()->toArray();
+
+        // Keep legacy keys for backward compatibility
         $delivery = $orderTypes->where('order_type', 'delivery')->first();
         $pickup = $orderTypes->where('order_type', 'pickup')->first();
-
-        // Revenue split by type
-        $deliveryRevenue = (clone $query)->where('order_type', 'delivery')->sum('total_amount');
-        $pickupRevenue = (clone $query)->where('order_type', 'pickup')->sum('total_amount');
 
         return [
             'delivery_pct' => $totalOrders > 0 ? round((($delivery?->count ?? 0) / $totalOrders) * 100) : 0,
             'pickup_pct' => $totalOrders > 0 ? round((($pickup?->count ?? 0) / $totalOrders) * 100) : 0,
-            'delivery_revenue' => round((float) $deliveryRevenue, 2),
-            'pickup_revenue' => round((float) $pickupRevenue, 2),
+            'delivery_revenue' => round((float) ((clone $query)->where('order_type', 'delivery')->sum('total_amount')), 2),
+            'pickup_revenue' => round((float) ((clone $query)->where('order_type', 'pickup')->sum('total_amount')), 2),
+            'types' => $types,
         ];
     }
 
@@ -470,7 +497,8 @@ class AnalyticsService
         $result = $methods->map(function ($method) use ($totalPayments) {
             $label = match ($method->payment_method) {
                 'mobile_money' => 'Mobile Money',
-                'cash_on_delivery', 'cash' => 'Cash on Delivery',
+                'cash_on_delivery' => 'Cash on Delivery',
+                'cash' => 'Cash',
                 'card' => 'Card Payment',
                 default => ucfirst(str_replace('_', ' ', $method->payment_method ?? 'Unknown'))
             };

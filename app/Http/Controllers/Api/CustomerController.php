@@ -27,7 +27,7 @@ class CustomerController extends Controller
             ->when($request->status, fn ($query) => $query->where('status', $request->status))
             ->when($request->search, fn ($query) => $query->whereHas('user', fn ($u) => $u->where('name', 'like', "%{$request->search}%")->orWhere('phone', 'like', "%{$request->search}%")))
             ->when($request->sort_by === 'orders', fn ($query) => $query->orderByDesc('orders_count'))
-            ->when($request->sort_by === 'spend', fn ($query) => $query->orderByRaw('COALESCE(total_spend, 0) DESC'))
+            ->when($request->sort_by === 'spend', fn ($query) => $query->orderByRaw('total_spend DESC NULLS LAST'))
             ->when(! in_array($request->sort_by, ['orders', 'spend']), fn ($query) => $query->latest())
             ->paginate($request->per_page ?? 15);
 
