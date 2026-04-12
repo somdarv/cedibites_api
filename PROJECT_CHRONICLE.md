@@ -104,6 +104,56 @@ Items still needing attention.
 
 ---
 
+## [2026-04-12] Session: BM Staff Sales Fix + manual_momo Support
+
+### Intent
+
+Fix Branch Manager Staff Sales page showing "No sales recorded" despite having data. Root cause was a PostgreSQL `SQLSTATE[42702]: Ambiguous column` error in `getStaffSalesMetrics()`. Also add `manual_momo` as a distinct payment method metric and merge `cash_on_delivery` into the `cash` bucket.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Services/Analytics/AnalyticsService.php` | Rewrote `getStaffSalesMetrics()` — replaced `placedOrders($filters)` with `Order::query()` + explicit JOINs + `applyFilters($query, $filters, 'orders')` table prefix | Fix ambiguous column PostgreSQL error: `placedOrders()` applied `whereDate('created_at', ...)` without table prefix, and after JOINing `payments`, `employees`, and `users` (all with `created_at` columns), PostgreSQL couldn't resolve which table's `created_at` to use |
+| `app/Services/Analytics/AnalyticsService.php` | Merged `cash_on_delivery` into `cash` bucket: `WHERE payment_method IN ('cash', 'cash_on_delivery')` | Business decision: cash_on_delivery is just cash — should not be a separate category |
+| `app/Services/Analytics/AnalyticsService.php` | Added `manual_momo_total` and `manual_momo_count` as standalone columns | Direct MoMo ("sent to branch number") is a distinct payment method needing its own tracking |
+| `app/Services/Analytics/AnalyticsService.php` | Changed all `SUM(orders.total_amount)` → `SUM(payments.amount)` | Prevents double-counting when orders have multiple payment records (e.g., split MoMo + Cash) |
+| `app/Services/Analytics/AnalyticsService.php` | Added explicit `whereNull('orders.deleted_at')` | New query bypasses Eloquent SoftDeletes scope, needs manual soft-delete check |
+
+### Decisions
+
+- **Decision**: Rewrite `getStaffSalesMetrics()` from scratch instead of patching `placedOrders()`
+  - **Alternatives**: Add table prefix to `placedOrders()` method
+  - **Rationale**: `placedOrders()` is used by other analytics methods — adding table prefix there would require auditing all callers. Building a fresh query with explicit prefix is safer and self-contained.
+- **Decision**: Use `payments.amount` instead of `orders.total_amount` for per-method SUMs
+  - **Rationale**: An order with multiple payments (e.g., split MoMo + Cash) would double-count the order's `total_amount` if summed per payment method.
+- **Decision**: Merge `cash_on_delivery` into `cash` bucket
+  - **Rationale**: `cash_on_delivery` is a branch payment setting key, not a fundamentally different payment flow. In the payments table, the money is still cash.
+
+### Current State
+
+- **Staff Sales endpoint**: Returns correct staff rows with per-method breakdowns including `manual_momo_total`/`manual_momo_count`
+- **Verified**: Branch 40 returned 6 staff rows with accurate payment breakdowns
+- **Cash bucket**: Includes both `cash` and `cash_on_delivery` payment records
+- **Payment SUMs**: Use `payments.amount` for accuracy with split payments
+- **Soft deletes**: Manually excluded via `whereNull('orders.deleted_at')`
+- **Deployed**: Committed and pushed to `master`
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|------|--------|--------|
+| `lib/api/services/branch.service.ts` | Added `manual_momo_total` and `manual_momo_count` to `StaffSalesRow` interface | TypeScript types match new API response shape |
+| `app/staff/manager/staff-sales/page.tsx` | Added Direct MoMo card (HandCoinsIcon, orange-600), updated grid to 5 columns, added `manualMomo` to totals reducer, conditional grand total line | UI renders new `manual_momo` data |
+
+### Pending / Follow-up
+
+- My Sales page 200-order cap (deferred to future session)
+- Audit other `placedOrders()` callers for potential similar ambiguous column issues in complex JOIN scenarios
+- Repository redirect warning on push (GitHub repo moved from somdarv to Saharabase-Technologies — cosmetic, pushes succeed)
+
+---
+
 ## [2026-04-12] Session: 13-Issue Audit Fix
 
 ### Intent

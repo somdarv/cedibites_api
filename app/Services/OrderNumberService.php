@@ -73,7 +73,7 @@ class OrderNumberService
     private function increment(string $code): string
     {
         $p = $this->parse($code);
-        if ($p['num'] < 100) {
+        if ($p['num'] < 999) {
             return $p['letters'].str_pad((string) ($p['num'] + 1), 3, '0', STR_PAD_LEFT);
         }
 
@@ -82,34 +82,27 @@ class OrderNumberService
 
     private function advancePrefix(string $letters): string
     {
-        if ($letters === 'A') {
-            return 'AB';
+        // Single letter A-Y → next letter
+        if (strlen($letters) === 1 && $letters < 'Z') {
+            return chr(ord($letters) + 1);
         }
 
-        if (strlen($letters) === 2 && $letters[0] === 'A' && $letters[1] >= 'B' && $letters[1] < 'Z') {
-            return 'A'.chr(ord($letters[1]) + 1);
+        // Single letter Z → start two-letter prefixes
+        if ($letters === 'Z') {
+            return 'AA';
         }
 
-        if ($letters === 'AZ') {
-            return 'BA';
-        }
-
-        if (strlen($letters) === 2 && $letters[0] === 'B' && $letters[1] >= 'A' && $letters[1] < 'Z') {
-            return 'B'.chr(ord($letters[1]) + 1);
-        }
-
-        if ($letters === 'BZ') {
-            return 'CA';
-        }
-
-        if (strlen($letters) === 2 && $letters[0] >= 'B' && $letters[0] < 'Z' && $letters[1] === 'Z') {
-            return chr(ord($letters[0]) + 1).'A';
-        }
-
+        // Two letters: increment second letter
         if (strlen($letters) === 2 && $letters[1] < 'Z') {
             return $letters[0].chr(ord($letters[1]) + 1);
         }
 
+        // Two letters ending in Z: increment first letter
+        if (strlen($letters) === 2 && $letters[0] < 'Z') {
+            return chr(ord($letters[0]) + 1).'A';
+        }
+
+        // ZZ999 — truly exhausted (702 prefixes × 999 = ~701k orders)
         throw new \RuntimeException("Order number prefix exhausted: {$letters}");
     }
 }
