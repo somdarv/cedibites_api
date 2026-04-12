@@ -166,4 +166,14 @@ class AdminAnalyticsController extends Controller
             'Checkout funnel analytics retrieved successfully.'
         );
     }
+
+    public function staffSales(Request $request): JsonResponse
+    {
+        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
+
+        return response()->success(
+            $this->analyticsService->getStaffSalesMetrics($filters),
+            'Staff sales analytics retrieved successfully.'
+        );
+    }
 }

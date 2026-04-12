@@ -145,6 +145,7 @@ Route::prefix('admin')->group(function () {
             Route::get('discount-usage', [AdminAnalyticsController::class, 'discountUsage']);
             Route::get('cancellation-reasons', [AdminAnalyticsController::class, 'cancellationReasons']);
             Route::get('checkout-funnel', [AdminAnalyticsController::class, 'checkoutFunnel']);
+            Route::get('staff-sales', [AdminAnalyticsController::class, 'staffSales']);
         });
 
         Route::prefix('reports')->group(function () {

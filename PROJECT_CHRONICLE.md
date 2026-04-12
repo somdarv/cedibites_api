@@ -104,6 +104,42 @@ Items still needing attention.
 
 ---
 
+## [2026-04-12] Session: Admin Staff Sales Endpoint
+
+### Intent
+
+Add an admin-level staff sales analytics endpoint so the new Admin Staff Sales page can query per-staff revenue breakdowns across all branches with date range and branch filters.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Http/Controllers/Api/AdminAnalyticsController.php` | Added `staffSales()` method delegating to `AnalyticsService::getStaffSalesMetrics()` with `date_from`, `date_to`, `branch_id` filters | Admin needs cross-branch staff sales view — reuses same service as manager endpoint for single source of truth |
+| `routes/admin.php` | Registered `GET admin/analytics/staff-sales` under existing `permission:view_orders` middleware group | Consistent with all other admin analytics route permissions |
+
+### Decisions
+
+- **Decision**: Reuse `AnalyticsService::getStaffSalesMetrics()` instead of creating a separate method
+  - **Rationale**: The method already supports optional `branch_id` and date range filters. Without `branch_id`, it returns all branches — exactly what admin needs.
+- **Decision**: Place under `view_orders` permission, not `view_employees`
+  - **Rationale**: Staff sales data is order/revenue data, not employee profile data. Consistent with all other analytics endpoints.
+
+### Current State
+
+- `GET /admin/analytics/staff-sales` available with optional `branch_id`, `date_from`, `date_to` query params
+- Returns same `AdminStaffSalesRow[]` shape as the manager's branch staff-sales endpoint
+- Gated by `view_orders` permission alongside all other admin analytics routes
+
+### Cross-Repo Impact
+
+| File (Frontend) | Change |
+|------|--------|
+| `app/admin/staff/sales/page.tsx` | New page consuming this endpoint |
+| `lib/api/services/analytics.service.ts` | Added `getAdminStaffSales()` service method |
+| `lib/api/hooks/useAnalytics.ts` | Added `useAdminStaffSales()` hook |
+
+---
+
 ## [2026-04-12] Session: BM Staff Sales Fix + manual_momo Support
 
 ### Intent
