@@ -104,6 +104,62 @@ Items still needing attention.
 
 ---
 
+## [2026-04-12] Session: 13-Issue Audit Fix
+
+### Intent
+
+Address 13 production issues across analytics, customer sorting, and staff sales data — improving data accuracy for payment labels, order type splits, top customer filtering, average items supporting stats, and staff sales attribution.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Http/Controllers/Api/CustomerController.php` | Fixed PostgreSQL sort: changed `COALESCE(total_spend, 0) DESC` to `total_spend DESC NULLS LAST` | PostgreSQL-native NULLS LAST is more idiomatic and correct than COALESCE workaround |
+| `app/Services/Analytics/AnalyticsService.php` | Separated `cash` and `cash_on_delivery` into distinct payment method labels | Cash and Cash on Delivery are different payment methods — merging them misrepresented revenue breakdown |
+| `app/Services/Analytics/AnalyticsService.php` | Added dynamic order type split with label, percentage, and revenue per type (delivery, pickup, dine_in, etc.) | Previously only had a static delivery vs pickup binary — missed dine_in and other types |
+| `app/Services/Analytics/AnalyticsService.php` | Top customers now filtered by fulfilled orders only (completed/delivered status) | Top customers should reflect actual completed business, not pending/cancelled orders |
+| `app/Services/Analytics/AnalyticsService.php` | Added supporting stats for average items per order: `single_item_orders_pct`, `multi_item_orders`, `max_items_in_order` | Enriches the avg items metric with actionable context |
+| `app/Services/Analytics/AnalyticsService.php` | Staff sales: removed `whereNotNull` filter, used left joins + `COALESCE` for "Unassigned" bucket | Historic orders without `assigned_employee_id` were silently excluded — now shown under "Unassigned" |
+
+### Decisions
+
+- **Decision**: Cash and Cash on Delivery are separate payment methods
+  - **Rationale**: They represent different payment flows — cash is paid at counter, cash_on_delivery is paid on delivery. Merging them obscured operational data.
+- **Decision**: Top customers metric uses fulfilled orders (completed/delivered) across all portals
+  - **Rationale**: Pending, cancelled, or refunded orders don't represent real customer value. Fulfilled orders are the canonical measure of customer contribution.
+- **Decision**: Staff sales includes "Unassigned" bucket via left joins + COALESCE
+  - **Alternatives**: Continue excluding unassigned orders; backfill historical data
+  - **Rationale**: Excluding orders silently distorts total revenue attribution. The "Unassigned" bucket makes the gap visible and accountable without requiring a data migration.
+- **Decision**: Use `total_spend DESC NULLS LAST` instead of `COALESCE(total_spend, 0) DESC`
+  - **Rationale**: PostgreSQL-native syntax, cleaner and avoids potential index issues with COALESCE wrapping.
+
+### Current State
+
+- **Customer sort**: Uses PostgreSQL `NULLS LAST` for proper NULL handling
+- **Payment methods**: Cash and Cash on Delivery are separate labels in analytics
+- **Order type split**: Dynamic breakdown with label/percentage/revenue per order type
+- **Top customers**: Filtered to fulfilled orders only (completed/delivered)
+- **Avg items per order**: Enhanced with 3 supporting stats
+- **Staff sales**: Includes all orders with "Unassigned" bucket for historic data without assigned employee
+- **Deployed**: Commit `c6cfb4a` merged to `master`
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|------|--------|--------|
+| `app/admin/analytics/page.tsx` | Fixed WeeklyRevenueComparison, added Last Week period, enhanced AvgItemsPerOrder, dynamic order type donut, updated customer title | UI reflects new backend data fields |
+| `app/partner/analytics/page.tsx` | Updated customer title, dynamic order type split | Partner portal aligned with new analytics data |
+| `app/staff/manager/analytics/page.tsx` | Fixed custom filter button, increased pill sizing, period-aware cards | Manager analytics uses new data shape |
+| `lib/api/services/analytics.service.ts` | Updated SalesAnalytics and DeliveryPickupAnalytics types | TypeScript types match new API response |
+| `lib/api/hooks/useAnalytics.ts` | Added `last_week` period type | New date range option |
+
+### Pending / Follow-up
+
+- Monitor staff sales "Unassigned" bucket size — if it's large, consider the historical backfill migration
+- Verify dynamic order type split handles edge cases (branches with only one order type)
+
+---
+
 ## [2026-04-10] Session: Analytics, Customer Sort, Shift Access Fixes
 
 ### Intent

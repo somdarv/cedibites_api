@@ -383,41 +383,57 @@ class AnalyticsService
 
     /**
      * Per-staff sales breakdown by payment method for a given date and branch.
-     * Uses DB-level conditional aggregation — no PHP iteration.
+     *
+     * Uses DB-level conditional aggregation on payments.amount (not orders.total_amount)
+     * to avoid double-counting when an order has multiple payment records.
+     *
+     * Payment grouping:
+     *  - MoMo:        mobile_money
+     *  - Cash:        cash + cash_on_delivery (merged)
+     *  - Manual MoMo: manual_momo (past-order recordings)
+     *  - Card:        card
+     *  - No Charge:   payment_status = 'no_charge'
      */
     public function getStaffSalesMetrics(array $filters = []): array
     {
-        // Build base query: placed, not cancelled, joined with payments
-        // Include unassigned orders in a separate bucket
-        $baseQuery = $this->queryBuilder->placedOrders($filters)
-            ->where('status', '!=', 'cancelled')
+        // Build from scratch with explicit table prefixes to avoid
+        // "ambiguous column" errors when joining payments/employees/users.
+        $query = Order::query()
             ->join('payments', function ($join) {
                 $join->on('payments.order_id', '=', 'orders.id')
                     ->whereIn('payments.payment_status', ['completed', 'no_charge']);
             })
             ->leftJoin('employees', 'orders.assigned_employee_id', '=', 'employees.id')
-            ->leftJoin('users', 'employees.user_id', '=', 'users.id');
+            ->leftJoin('users', 'employees.user_id', '=', 'users.id')
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at');
 
-        $rows = $baseQuery
+        // Apply filters with explicit orders. prefix
+        $this->queryBuilder->applyFilters($query, $filters, 'orders');
+
+        $rows = $query
             ->select(
                 DB::raw('COALESCE(orders.assigned_employee_id, 0) as employee_id'),
                 DB::raw("COALESCE(users.name, 'Unassigned') as staff_name"),
                 DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
-                // MoMo
-                DB::raw("SUM(CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as momo_total"),
+                // MoMo (uses payments.amount to avoid double-count)
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN payments.amount ELSE 0 END) as momo_total"),
                 DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'mobile_money' AND payments.payment_status = 'completed' THEN orders.id END) as momo_count"),
-                // Cash
-                DB::raw("SUM(CASE WHEN payments.payment_method = 'cash' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as cash_total"),
-                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'cash' AND payments.payment_status = 'completed' THEN orders.id END) as cash_count"),
+                // Cash (merged: cash + cash_on_delivery)
+                DB::raw("SUM(CASE WHEN payments.payment_method IN ('cash', 'cash_on_delivery') AND payments.payment_status = 'completed' THEN payments.amount ELSE 0 END) as cash_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method IN ('cash', 'cash_on_delivery') AND payments.payment_status = 'completed' THEN orders.id END) as cash_count"),
+                // Manual MoMo (past-order recordings)
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'manual_momo' AND payments.payment_status = 'completed' THEN payments.amount ELSE 0 END) as manual_momo_total"),
+                DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'manual_momo' AND payments.payment_status = 'completed' THEN orders.id END) as manual_momo_count"),
                 // Card
-                DB::raw("SUM(CASE WHEN payments.payment_method = 'card' AND payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END) as card_total"),
+                DB::raw("SUM(CASE WHEN payments.payment_method = 'card' AND payments.payment_status = 'completed' THEN payments.amount ELSE 0 END) as card_total"),
                 DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_method = 'card' AND payments.payment_status = 'completed' THEN orders.id END) as card_count"),
                 // No charge
-                DB::raw("SUM(CASE WHEN payments.payment_status = 'no_charge' THEN orders.total_amount ELSE 0 END) as no_charge_total"),
+                DB::raw("SUM(CASE WHEN payments.payment_status = 'no_charge' THEN payments.amount ELSE 0 END) as no_charge_total"),
                 DB::raw("COUNT(DISTINCT CASE WHEN payments.payment_status = 'no_charge' THEN orders.id END) as no_charge_count"),
             )
             ->groupBy(DB::raw('COALESCE(orders.assigned_employee_id, 0)'), DB::raw("COALESCE(users.name, 'Unassigned')"))
-            ->orderByDesc(DB::raw("SUM(CASE WHEN payments.payment_status = 'completed' THEN orders.total_amount ELSE 0 END)"))
+            ->orderByDesc(DB::raw("SUM(CASE WHEN payments.payment_status = 'completed' THEN payments.amount ELSE 0 END)"))
             ->get();
 
         return $rows->map(fn ($r) => [
@@ -428,11 +444,16 @@ class AnalyticsService
             'momo_count' => (int) $r->momo_count,
             'cash_total' => round((float) $r->cash_total, 2),
             'cash_count' => (int) $r->cash_count,
+            'manual_momo_total' => round((float) $r->manual_momo_total, 2),
+            'manual_momo_count' => (int) $r->manual_momo_count,
             'card_total' => round((float) $r->card_total, 2),
             'card_count' => (int) $r->card_count,
             'no_charge_total' => round((float) $r->no_charge_total, 2),
             'no_charge_count' => (int) $r->no_charge_count,
-            'total_revenue' => round((float) $r->momo_total + (float) $r->cash_total + (float) $r->card_total, 2),
+            'total_revenue' => round(
+                (float) $r->momo_total + (float) $r->cash_total + (float) $r->manual_momo_total + (float) $r->card_total,
+                2,
+            ),
         ])->toArray();
     }
 
