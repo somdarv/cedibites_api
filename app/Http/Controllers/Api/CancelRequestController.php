@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Models\OrderStatusHistory;
+use App\Models\User;
+use App\Notifications\CancelRequestedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class CancelRequestController extends Controller
 {
@@ -45,6 +48,15 @@ class CancelRequestController extends Controller
                 ->event('cancel_requested')
                 ->log("Cancel requested for order {$order->order_number}");
         });
+
+        // Notify all admins via Web Push (queued, non-blocking)
+        try {
+            $admins = User::permission('access_admin_panel')->get();
+            $requesterName = $request->user()->name ?? 'Staff';
+            Notification::send($admins, new CancelRequestedNotification($order, $validated['reason'], $requesterName));
+        } catch (\Throwable $e) {
+            Log::warning('CancelRequestController: push notification dispatch failed', ['error' => $e->getMessage()]);
+        }
 
         try {
             $order->load([

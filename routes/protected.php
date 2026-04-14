@@ -3,7 +3,13 @@
 use App\Http\Controllers\Api\MenuItemController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 use Illuminate\Support\Facades\Route;
+
+// --- Push subscription management (any authenticated user) ---
+Route::get('push/vapid-key', [PushSubscriptionController::class, 'vapidPublicKey']);
+Route::post('push/subscribe', [PushSubscriptionController::class, 'store']);
+Route::post('push/unsubscribe', [PushSubscriptionController::class, 'destroy']);
 
 // --- Customer-accessible routes (any authenticated user, suspended customers blocked) ---
 Route::middleware('customer.active')->group(function () {
