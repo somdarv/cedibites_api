@@ -27,21 +27,23 @@ class CancelRequestController extends Controller
             ], 422);
         }
 
-        $order->update([
-            'status' => 'cancel_requested',
-            'cancel_requested_by' => $request->user()->id,
-            'cancel_request_reason' => $validated['reason'],
-            'cancel_requested_at' => now(),
-        ]);
+        DB::transaction(function () use ($order, $request, $validated): void {
+            $order->update([
+                'status' => 'cancel_requested',
+                'cancel_requested_by' => $request->user()->id,
+                'cancel_request_reason' => $validated['reason'],
+                'cancel_requested_at' => now(),
+            ]);
 
-        activity('orders')
-            ->causedBy($request->user())
-            ->performedOn($order)
-            ->withProperties([
-                'reason' => $validated['reason'],
-            ])
-            ->event('cancel_requested')
-            ->log("Cancel requested for order {$order->order_number}");
+            activity('orders')
+                ->causedBy($request->user())
+                ->performedOn($order)
+                ->withProperties([
+                    'reason' => $validated['reason'],
+                ])
+                ->event('cancel_requested')
+                ->log("Cancel requested for order {$order->order_number}");
+        });
 
         $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
 
@@ -103,19 +105,21 @@ class CancelRequestController extends Controller
 
         $revertTo = $previousStatus?->status ?? 'received';
 
-        $order->update([
-            'status' => $revertTo,
-            'cancel_requested_by' => null,
-            'cancel_request_reason' => null,
-            'cancel_requested_at' => null,
-        ]);
+        DB::transaction(function () use ($order, $request, $revertTo): void {
+            $order->update([
+                'status' => $revertTo,
+                'cancel_requested_by' => null,
+                'cancel_request_reason' => null,
+                'cancel_requested_at' => null,
+            ]);
 
-        activity('orders')
-            ->causedBy($request->user())
-            ->performedOn($order)
-            ->withProperties(['reverted_to' => $revertTo])
-            ->event('cancel_rejected')
-            ->log("Cancellation rejected for order {$order->order_number}, reverted to {$revertTo}");
+            activity('orders')
+                ->causedBy($request->user())
+                ->performedOn($order)
+                ->withProperties(['reverted_to' => $revertTo])
+                ->event('cancel_rejected')
+                ->log("Cancellation rejected for order {$order->order_number}, reverted to {$revertTo}");
+        });
 
         $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
 

@@ -104,6 +104,53 @@ Items still needing attention.
 
 ---
 
+## [2026-04-14] Session: Cancel Request Double-Fire Bug Fix
+
+### Intent
+
+Fix a bug where staff clicking "Request Cancellation" once on the manager orders page resulted in TWO API requests — the first returning 500 (Internal Server Error), the second returning 422 ("Cannot request cancellation for an order with status 'cancel_requested'"). The order did transition correctly despite the error shown to the user.
+
+### Root Cause
+
+Two compounding bugs:
+
+1. **Frontend mutation retry**: TanStack Query's `QueryProvider.tsx` had `retry: 1` for mutations. When the first cancel request returned 500, TanStack Query automatically retried — causing the phantom "double click".
+2. **Backend non-atomic state change**: `requestCancel()` was NOT wrapped in `DB::transaction()`. The `$order->update()` committed to DB, but something after it (activity log or eager loading) threw an exception → 500. The retry then found the order already in `cancel_requested` → 422.
+
+### Changes Made
+
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Http/Controllers/Api/CancelRequestController.php` | Wrapped `requestCancel()` method body in `DB::transaction()` | If activity log or eager loading fails after status update, the status change rolls back — prevents partial commits leaving order in inconsistent state |
+| `app/Http/Controllers/Api/CancelRequestController.php` | Wrapped `rejectCancel()` method body in `DB::transaction()` | Same atomicity fix — status change + activity log + eager loading must all succeed or all roll back |
+
+### Decisions
+
+- **Decision**: Wrap `requestCancel()` and `rejectCancel()` in `DB::transaction()` — `approveCancel()` was already transactional
+  - **Rationale**: All state-changing methods that update order status AND perform follow-up operations (activity log, eager loading) must be atomic. A partial commit (status saved, but activity log error → 500) is the root cause of the double-fire bug on the frontend.
+- **Decision**: Did NOT change `approveCancel()`
+  - **Rationale**: Already wrapped in a transaction — no fix needed.
+
+### Current State
+
+- **`requestCancel()`**: Fully transactional — status update + activity log + eager load happen atomically
+- **`rejectCancel()`**: Fully transactional — same atomicity guarantee
+- **`approveCancel()`**: Already transactional (unchanged)
+- **Cancel flow overall**: 500 errors from post-update failures will now roll back the status change, so the order won't be left in `cancel_requested` if the response fails
+
+### Cross-Repo Impact
+
+| File (Frontend repo) | Change | Impact |
+|---------------------|--------|--------|
+| `app/components/providers/QueryProvider.tsx` | Mutations changed from `retry: 1` to `retry: false` | Prevents TanStack Query from auto-retrying failed mutations — the frontend amplification that caused the double-fire |
+
+### Pending / Follow-up
+
+- Investigate the original 500 error root cause in production logs (`storage/logs/laravel.log`) — likely activity logging or eager loading failure inside `requestCancel()`
+- Audit other controller methods for similar non-transactional state changes (status update outside `DB::transaction()`) that could cause partial commits
+
+---
+
 ## [2026-04-12] Session: Admin Staff Sales Endpoint
 
 ### Intent
@@ -112,17 +159,17 @@ Add an admin-level staff sales analytics endpoint so the new Admin Staff Sales p
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                                                    | Change                                                                                                                                | Reason                                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `app/Http/Controllers/Api/AdminAnalyticsController.php` | Added `staffSales()` method delegating to `AnalyticsService::getStaffSalesMetrics()` with `date_from`, `date_to`, `branch_id` filters | Admin needs cross-branch staff sales view — reuses same service as manager endpoint for single source of truth |
-| `routes/admin.php` | Registered `GET admin/analytics/staff-sales` under existing `permission:view_orders` middleware group | Consistent with all other admin analytics route permissions |
+| `routes/admin.php`                                      | Registered `GET admin/analytics/staff-sales` under existing `permission:view_orders` middleware group                                 | Consistent with all other admin analytics route permissions                                                    |
 
 ### Decisions
 
 - **Decision**: Reuse `AnalyticsService::getStaffSalesMetrics()` instead of creating a separate method
-  - **Rationale**: The method already supports optional `branch_id` and date range filters. Without `branch_id`, it returns all branches — exactly what admin needs.
+    - **Rationale**: The method already supports optional `branch_id` and date range filters. Without `branch_id`, it returns all branches — exactly what admin needs.
 - **Decision**: Place under `view_orders` permission, not `view_employees`
-  - **Rationale**: Staff sales data is order/revenue data, not employee profile data. Consistent with all other analytics endpoints.
+    - **Rationale**: Staff sales data is order/revenue data, not employee profile data. Consistent with all other analytics endpoints.
 
 ### Current State
 
@@ -132,11 +179,11 @@ Add an admin-level staff sales analytics endpoint so the new Admin Staff Sales p
 
 ### Cross-Repo Impact
 
-| File (Frontend) | Change |
-|------|--------|
-| `app/admin/staff/sales/page.tsx` | New page consuming this endpoint |
+| File (Frontend)                         | Change                                      |
+| --------------------------------------- | ------------------------------------------- |
+| `app/admin/staff/sales/page.tsx`        | New page consuming this endpoint            |
 | `lib/api/services/analytics.service.ts` | Added `getAdminStaffSales()` service method |
-| `lib/api/hooks/useAnalytics.ts` | Added `useAdminStaffSales()` hook |
+| `lib/api/hooks/useAnalytics.ts`         | Added `useAdminStaffSales()` hook           |
 
 ---
 
@@ -148,23 +195,23 @@ Fix Branch Manager Staff Sales page showing "No sales recorded" despite having d
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                                          | Change                                                                                                                                                                | Reason                                                                                                                                                                                                                                                                     |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app/Services/Analytics/AnalyticsService.php` | Rewrote `getStaffSalesMetrics()` — replaced `placedOrders($filters)` with `Order::query()` + explicit JOINs + `applyFilters($query, $filters, 'orders')` table prefix | Fix ambiguous column PostgreSQL error: `placedOrders()` applied `whereDate('created_at', ...)` without table prefix, and after JOINing `payments`, `employees`, and `users` (all with `created_at` columns), PostgreSQL couldn't resolve which table's `created_at` to use |
-| `app/Services/Analytics/AnalyticsService.php` | Merged `cash_on_delivery` into `cash` bucket: `WHERE payment_method IN ('cash', 'cash_on_delivery')` | Business decision: cash_on_delivery is just cash — should not be a separate category |
-| `app/Services/Analytics/AnalyticsService.php` | Added `manual_momo_total` and `manual_momo_count` as standalone columns | Direct MoMo ("sent to branch number") is a distinct payment method needing its own tracking |
-| `app/Services/Analytics/AnalyticsService.php` | Changed all `SUM(orders.total_amount)` → `SUM(payments.amount)` | Prevents double-counting when orders have multiple payment records (e.g., split MoMo + Cash) |
-| `app/Services/Analytics/AnalyticsService.php` | Added explicit `whereNull('orders.deleted_at')` | New query bypasses Eloquent SoftDeletes scope, needs manual soft-delete check |
+| `app/Services/Analytics/AnalyticsService.php` | Merged `cash_on_delivery` into `cash` bucket: `WHERE payment_method IN ('cash', 'cash_on_delivery')`                                                                  | Business decision: cash_on_delivery is just cash — should not be a separate category                                                                                                                                                                                       |
+| `app/Services/Analytics/AnalyticsService.php` | Added `manual_momo_total` and `manual_momo_count` as standalone columns                                                                                               | Direct MoMo ("sent to branch number") is a distinct payment method needing its own tracking                                                                                                                                                                                |
+| `app/Services/Analytics/AnalyticsService.php` | Changed all `SUM(orders.total_amount)` → `SUM(payments.amount)`                                                                                                       | Prevents double-counting when orders have multiple payment records (e.g., split MoMo + Cash)                                                                                                                                                                               |
+| `app/Services/Analytics/AnalyticsService.php` | Added explicit `whereNull('orders.deleted_at')`                                                                                                                       | New query bypasses Eloquent SoftDeletes scope, needs manual soft-delete check                                                                                                                                                                                              |
 
 ### Decisions
 
 - **Decision**: Rewrite `getStaffSalesMetrics()` from scratch instead of patching `placedOrders()`
-  - **Alternatives**: Add table prefix to `placedOrders()` method
-  - **Rationale**: `placedOrders()` is used by other analytics methods — adding table prefix there would require auditing all callers. Building a fresh query with explicit prefix is safer and self-contained.
+    - **Alternatives**: Add table prefix to `placedOrders()` method
+    - **Rationale**: `placedOrders()` is used by other analytics methods — adding table prefix there would require auditing all callers. Building a fresh query with explicit prefix is safer and self-contained.
 - **Decision**: Use `payments.amount` instead of `orders.total_amount` for per-method SUMs
-  - **Rationale**: An order with multiple payments (e.g., split MoMo + Cash) would double-count the order's `total_amount` if summed per payment method.
+    - **Rationale**: An order with multiple payments (e.g., split MoMo + Cash) would double-count the order's `total_amount` if summed per payment method.
 - **Decision**: Merge `cash_on_delivery` into `cash` bucket
-  - **Rationale**: `cash_on_delivery` is a branch payment setting key, not a fundamentally different payment flow. In the payments table, the money is still cash.
+    - **Rationale**: `cash_on_delivery` is a branch payment setting key, not a fundamentally different payment flow. In the payments table, the money is still cash.
 
 ### Current State
 
@@ -177,10 +224,10 @@ Fix Branch Manager Staff Sales page showing "No sales recorded" despite having d
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|------|--------|--------|
-| `lib/api/services/branch.service.ts` | Added `manual_momo_total` and `manual_momo_count` to `StaffSalesRow` interface | TypeScript types match new API response shape |
-| `app/staff/manager/staff-sales/page.tsx` | Added Direct MoMo card (HandCoinsIcon, orange-600), updated grid to 5 columns, added `manualMomo` to totals reducer, conditional grand total line | UI renders new `manual_momo` data |
+| File (Frontend repo)                     | Change                                                                                                                                            | Impact                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `lib/api/services/branch.service.ts`     | Added `manual_momo_total` and `manual_momo_count` to `StaffSalesRow` interface                                                                    | TypeScript types match new API response shape |
+| `app/staff/manager/staff-sales/page.tsx` | Added Direct MoMo card (HandCoinsIcon, orange-600), updated grid to 5 columns, added `manualMomo` to totals reducer, conditional grand total line | UI renders new `manual_momo` data             |
 
 ### Pending / Follow-up
 
@@ -198,26 +245,26 @@ Address 13 production issues across analytics, customer sorting, and staff sales
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Http/Controllers/Api/CustomerController.php` | Fixed PostgreSQL sort: changed `COALESCE(total_spend, 0) DESC` to `total_spend DESC NULLS LAST` | PostgreSQL-native NULLS LAST is more idiomatic and correct than COALESCE workaround |
-| `app/Services/Analytics/AnalyticsService.php` | Separated `cash` and `cash_on_delivery` into distinct payment method labels | Cash and Cash on Delivery are different payment methods — merging them misrepresented revenue breakdown |
-| `app/Services/Analytics/AnalyticsService.php` | Added dynamic order type split with label, percentage, and revenue per type (delivery, pickup, dine_in, etc.) | Previously only had a static delivery vs pickup binary — missed dine_in and other types |
-| `app/Services/Analytics/AnalyticsService.php` | Top customers now filtered by fulfilled orders only (completed/delivered status) | Top customers should reflect actual completed business, not pending/cancelled orders |
-| `app/Services/Analytics/AnalyticsService.php` | Added supporting stats for average items per order: `single_item_orders_pct`, `multi_item_orders`, `max_items_in_order` | Enriches the avg items metric with actionable context |
-| `app/Services/Analytics/AnalyticsService.php` | Staff sales: removed `whereNotNull` filter, used left joins + `COALESCE` for "Unassigned" bucket | Historic orders without `assigned_employee_id` were silently excluded — now shown under "Unassigned" |
+| File                                              | Change                                                                                                                  | Reason                                                                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `app/Http/Controllers/Api/CustomerController.php` | Fixed PostgreSQL sort: changed `COALESCE(total_spend, 0) DESC` to `total_spend DESC NULLS LAST`                         | PostgreSQL-native NULLS LAST is more idiomatic and correct than COALESCE workaround                     |
+| `app/Services/Analytics/AnalyticsService.php`     | Separated `cash` and `cash_on_delivery` into distinct payment method labels                                             | Cash and Cash on Delivery are different payment methods — merging them misrepresented revenue breakdown |
+| `app/Services/Analytics/AnalyticsService.php`     | Added dynamic order type split with label, percentage, and revenue per type (delivery, pickup, dine_in, etc.)           | Previously only had a static delivery vs pickup binary — missed dine_in and other types                 |
+| `app/Services/Analytics/AnalyticsService.php`     | Top customers now filtered by fulfilled orders only (completed/delivered status)                                        | Top customers should reflect actual completed business, not pending/cancelled orders                    |
+| `app/Services/Analytics/AnalyticsService.php`     | Added supporting stats for average items per order: `single_item_orders_pct`, `multi_item_orders`, `max_items_in_order` | Enriches the avg items metric with actionable context                                                   |
+| `app/Services/Analytics/AnalyticsService.php`     | Staff sales: removed `whereNotNull` filter, used left joins + `COALESCE` for "Unassigned" bucket                        | Historic orders without `assigned_employee_id` were silently excluded — now shown under "Unassigned"    |
 
 ### Decisions
 
 - **Decision**: Cash and Cash on Delivery are separate payment methods
-  - **Rationale**: They represent different payment flows — cash is paid at counter, cash_on_delivery is paid on delivery. Merging them obscured operational data.
+    - **Rationale**: They represent different payment flows — cash is paid at counter, cash_on_delivery is paid on delivery. Merging them obscured operational data.
 - **Decision**: Top customers metric uses fulfilled orders (completed/delivered) across all portals
-  - **Rationale**: Pending, cancelled, or refunded orders don't represent real customer value. Fulfilled orders are the canonical measure of customer contribution.
+    - **Rationale**: Pending, cancelled, or refunded orders don't represent real customer value. Fulfilled orders are the canonical measure of customer contribution.
 - **Decision**: Staff sales includes "Unassigned" bucket via left joins + COALESCE
-  - **Alternatives**: Continue excluding unassigned orders; backfill historical data
-  - **Rationale**: Excluding orders silently distorts total revenue attribution. The "Unassigned" bucket makes the gap visible and accountable without requiring a data migration.
+    - **Alternatives**: Continue excluding unassigned orders; backfill historical data
+    - **Rationale**: Excluding orders silently distorts total revenue attribution. The "Unassigned" bucket makes the gap visible and accountable without requiring a data migration.
 - **Decision**: Use `total_spend DESC NULLS LAST` instead of `COALESCE(total_spend, 0) DESC`
-  - **Rationale**: PostgreSQL-native syntax, cleaner and avoids potential index issues with COALESCE wrapping.
+    - **Rationale**: PostgreSQL-native syntax, cleaner and avoids potential index issues with COALESCE wrapping.
 
 ### Current State
 
@@ -231,13 +278,13 @@ Address 13 production issues across analytics, customer sorting, and staff sales
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|------|--------|--------|
-| `app/admin/analytics/page.tsx` | Fixed WeeklyRevenueComparison, added Last Week period, enhanced AvgItemsPerOrder, dynamic order type donut, updated customer title | UI reflects new backend data fields |
-| `app/partner/analytics/page.tsx` | Updated customer title, dynamic order type split | Partner portal aligned with new analytics data |
-| `app/staff/manager/analytics/page.tsx` | Fixed custom filter button, increased pill sizing, period-aware cards | Manager analytics uses new data shape |
-| `lib/api/services/analytics.service.ts` | Updated SalesAnalytics and DeliveryPickupAnalytics types | TypeScript types match new API response |
-| `lib/api/hooks/useAnalytics.ts` | Added `last_week` period type | New date range option |
+| File (Frontend repo)                    | Change                                                                                                                             | Impact                                         |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `app/admin/analytics/page.tsx`          | Fixed WeeklyRevenueComparison, added Last Week period, enhanced AvgItemsPerOrder, dynamic order type donut, updated customer title | UI reflects new backend data fields            |
+| `app/partner/analytics/page.tsx`        | Updated customer title, dynamic order type split                                                                                   | Partner portal aligned with new analytics data |
+| `app/staff/manager/analytics/page.tsx`  | Fixed custom filter button, increased pill sizing, period-aware cards                                                              | Manager analytics uses new data shape          |
+| `lib/api/services/analytics.service.ts` | Updated SalesAnalytics and DeliveryPickupAnalytics types                                                                           | TypeScript types match new API response        |
+| `lib/api/hooks/useAnalytics.ts`         | Added `last_week` period type                                                                                                      | New date range option                          |
 
 ### Pending / Follow-up
 
@@ -254,20 +301,20 @@ Fix three backend bugs: (1) Admin analytics top customers showing no names/order
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Services/Analytics/AnalyticsService.php` | `getCustomerMetrics()` now eager-loads `['user', 'orders' => fn($q) => $q->latest()->limit(1)]`. Results mapped to plain arrays with `name` resolved via chain: `user.name → order.contact_name → 'Guest'`. Includes `orders_count` and `total_spend`. | Top customers returned raw Customer models without user relationship loaded — Customer model has no `name` field (name lives on User model; guest names on Order.contact_name) |
-| `app/Http/Controllers/Api/CustomerController.php` | Changed `->orderByDesc('total_spend')` to `->orderByRaw('COALESCE(total_spend, 0) DESC')` | `withSum` produces NULL for customers with no completed/delivered orders. MySQL sorts NULLs inconsistently, breaking "Highest Spend" sort |
-| `app/Http/Controllers/Api/ShiftController.php` | Updated `index()`, `getByDate()`, and `getByStaff()` with three-tier access: Admin/TechAdmin → see all shifts; Manager → see shifts within assigned branches via `$employee->branches()->pluck('branches.id')`; Regular staff → own shifts only | Previously only Admin/TechAdmin had a bypass — all other roles (including Manager) were restricted to their own shifts via `where('employee_id', $employee->id)` |
+| File                                              | Change                                                                                                                                                                                                                                                 | Reason                                                                                                                                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app/Services/Analytics/AnalyticsService.php`     | `getCustomerMetrics()` now eager-loads `['user', 'orders' => fn($q) => $q->latest()->limit(1)]`. Results mapped to plain arrays with `name` resolved via chain: `user.name → order.contact_name → 'Guest'`. Includes `orders_count` and `total_spend`. | Top customers returned raw Customer models without user relationship loaded — Customer model has no `name` field (name lives on User model; guest names on Order.contact_name) |
+| `app/Http/Controllers/Api/CustomerController.php` | Changed `->orderByDesc('total_spend')` to `->orderByRaw('COALESCE(total_spend, 0) DESC')`                                                                                                                                                              | `withSum` produces NULL for customers with no completed/delivered orders. MySQL sorts NULLs inconsistently, breaking "Highest Spend" sort                                      |
+| `app/Http/Controllers/Api/ShiftController.php`    | Updated `index()`, `getByDate()`, and `getByStaff()` with three-tier access: Admin/TechAdmin → see all shifts; Manager → see shifts within assigned branches via `$employee->branches()->pluck('branches.id')`; Regular staff → own shifts only        | Previously only Admin/TechAdmin had a bypass — all other roles (including Manager) were restricted to their own shifts via `where('employee_id', $employee->id)`               |
 
 ### Decisions
 
 - **Decision**: Top customer name resolution uses a fallback chain: `user.name` → `order.contact_name` → `'Guest'`
-  - **Rationale**: Registered customers have a User record. Guest customers only have a name on their Order. Some have neither. The chain covers all cases.
+    - **Rationale**: Registered customers have a User record. Guest customers only have a name on their Order. Some have neither. The chain covers all cases.
 - **Decision**: Manager shift access scoped to their assigned branches (not all branches)
-  - **Rationale**: Managers should only see shifts in branches they manage. Admin/TechAdmin retain full visibility.
+    - **Rationale**: Managers should only see shifts in branches they manage. Admin/TechAdmin retain full visibility.
 - **Decision**: Use `COALESCE(total_spend, 0)` rather than defaulting NULL in the model
-  - **Rationale**: Fixing at query level is more explicit and doesn't affect other uses of `total_spend`.
+    - **Rationale**: Fixing at query level is more explicit and doesn't affect other uses of `total_spend`.
 
 ### Current State
 
@@ -277,14 +324,14 @@ Fix three backend bugs: (1) Admin analytics top customers showing no names/order
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|------|--------|--------|
-| `app/admin/analytics/page.tsx` | Top customers reduced to 5, added Last Month + Lifetime periods | UI matches new backend data shape |
-| `lib/api/hooks/useAnalytics.ts` | Added `last_month` and `lifetime` period types | New date ranges for admin analytics |
-| `app/staff/manager/analytics/page.tsx` | Full period-driven rewrite with 7 date range options | Manager analytics now has rich filtering |
-| Multiple ordering surfaces | Added `is_available: true` to menu fetchers | Menu toggle now works end-to-end |
-| `app/staff/manager/settings/page.tsx` | Branch status accounts for operating hours | Correct open/closed display |
-| `app/globals.css` | Global slim scrollbar styling | UI polish |
+| File (Frontend repo)                   | Change                                                          | Impact                                   |
+| -------------------------------------- | --------------------------------------------------------------- | ---------------------------------------- |
+| `app/admin/analytics/page.tsx`         | Top customers reduced to 5, added Last Month + Lifetime periods | UI matches new backend data shape        |
+| `lib/api/hooks/useAnalytics.ts`        | Added `last_month` and `lifetime` period types                  | New date ranges for admin analytics      |
+| `app/staff/manager/analytics/page.tsx` | Full period-driven rewrite with 7 date range options            | Manager analytics now has rich filtering |
+| Multiple ordering surfaces             | Added `is_available: true` to menu fetchers                     | Menu toggle now works end-to-end         |
+| `app/staff/manager/settings/page.tsx`  | Branch status accounts for operating hours                      | Correct open/closed display              |
+| `app/globals.css`                      | Global slim scrollbar styling                                   | UI polish                                |
 
 ### Pending / Follow-up
 
@@ -301,28 +348,28 @@ Fix two backend bugs surfaced during manager dashboard testing: (1) Revenue char
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Services/Analytics/AnalyticsService.php` | Added `use Carbon\Carbon;` import. Changed `getBranchRevenueChart()` to use `startOfWeek(Carbon::SUNDAY)` and `endOfWeek(Carbon::SATURDAY)` instead of default Monday start. | Carbon's `startOfWeek()` defaults to Monday. The business week starts Sunday, so Sunday was always the "last" day with no data yet — its bar was perpetually flat. |
-| `app/Services/OrderManagementService.php` | Changed auto-assignment condition from `$status === 'accepted'` to `in_array($status, ['accepted', 'preparing'])`. | Online orders often skip the `accepted` status, going directly to `preparing`. Since auto-assignment only triggered on `accepted`, `assigned_employee_id` was never set for these orders. The Staff Sales query filters on `whereNotNull('assigned_employee_id')`, resulting in empty results. |
+| File                                          | Change                                                                                                                                                                       | Reason                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/Services/Analytics/AnalyticsService.php` | Added `use Carbon\Carbon;` import. Changed `getBranchRevenueChart()` to use `startOfWeek(Carbon::SUNDAY)` and `endOfWeek(Carbon::SATURDAY)` instead of default Monday start. | Carbon's `startOfWeek()` defaults to Monday. The business week starts Sunday, so Sunday was always the "last" day with no data yet — its bar was perpetually flat.                                                                                                                             |
+| `app/Services/OrderManagementService.php`     | Changed auto-assignment condition from `$status === 'accepted'` to `in_array($status, ['accepted', 'preparing'])`.                                                           | Online orders often skip the `accepted` status, going directly to `preparing`. Since auto-assignment only triggered on `accepted`, `assigned_employee_id` was never set for these orders. The Staff Sales query filters on `whereNotNull('assigned_employee_id')`, resulting in empty results. |
 
 ### Decisions
 
 - **Decision**: Staff auto-assignment triggers on both `accepted` AND `preparing` transitions
-  - **Alternatives**: Trigger on all non-terminal status changes; backfill existing orders
-  - **Rationale**: `accepted` and `preparing` are the two entry points into the active order flow. Triggering on all transitions would be redundant and could overwrite manual assignments. Covers both manual acceptance and direct-to-preparing flows.
+    - **Alternatives**: Trigger on all non-terminal status changes; backfill existing orders
+    - **Rationale**: `accepted` and `preparing` are the two entry points into the active order flow. Triggering on all transitions would be redundant and could overwrite manual assignments. Covers both manual acceptance and direct-to-preparing flows.
 - **Decision**: Week starts on Sunday (`Carbon::SUNDAY`) for revenue chart
-  - **Alternatives**: Keep Monday start matching Carbon default; make it configurable
-  - **Rationale**: Matches business convention — the restaurant week runs Sunday through Saturday. A configurable setting adds complexity with no current need.
+    - **Alternatives**: Keep Monday start matching Carbon default; make it configurable
+    - **Rationale**: Matches business convention — the restaurant week runs Sunday through Saturday. A configurable setting adds complexity with no current need.
 - **Decision**: Do NOT retroactively fix existing orders without `assigned_employee_id`
-  - **Rationale**: Determining the correct staff member for historical orders is ambiguous (who actually handled it?). The fix applies going forward. A backfill migration could be considered separately if historical accuracy matters.
+    - **Rationale**: Determining the correct staff member for historical orders is ambiguous (who actually handled it?). The fix applies going forward. A backfill migration could be considered separately if historical accuracy matters.
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|------|--------|--------|
+| File (Frontend repo)                   | Change                                                                                                                                                                                                    | Impact                                                                |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `app/staff/manager/dashboard/page.tsx` | Added `cancel_requested` to `STATUS_STYLES`, added info block for cancel-requested orders, disabled cancel button when status is `cancel_requested`, added `cancel_requested` to active orders KPI filter | Fixes cancel "double-fire" 422 error and corrects Active Orders count |
-| `app/staff/manager/shifts/page.tsx` | Full rewrite (~480 lines) to match `MyShiftsView` layout pattern — hero card, today's summary, collapsible calendar, extracted `ShiftCard` component | Visual consistency between staff and manager shift views |
+| `app/staff/manager/shifts/page.tsx`    | Full rewrite (~480 lines) to match `MyShiftsView` layout pattern — hero card, today's summary, collapsible calendar, extracted `ShiftCard` component                                                      | Visual consistency between staff and manager shift views              |
 
 ### Current State
 
@@ -345,11 +392,11 @@ Make branch extended access toggles propagate in real-time to all connected POS/
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
-| `app/Events/BranchAccessUpdatedEvent.php` | **NEW** — Created `BranchAccessUpdatedEvent` implementing `ShouldBroadcast`. Broadcasts on `orders.branch.{branch_id}` private channel with broadcast name `.branch.access.updated`. Payload: `branch_id`, `extended_staff_access`, `extended_order_access`, `staff_access_allowed` | Real-time propagation of access changes to all staff clients listening on the branch channel |
-| `app/Http/Controllers/Api/BranchController.php` | Added `use App\Events\BranchAccessUpdatedEvent` import. Both `toggleExtendedStaffAccess()` and `toggleExtendedOrderAccess()` now dispatch `BranchAccessUpdatedEvent::dispatch($branch->fresh())` after updating the branch | Triggers WebSocket broadcast when admin toggles access |
-| `app/Http/Controllers/Api/CheckoutSessionController.php` | Updated branch-closed error response in `posStore()` to include `code: 'branch_closed'` field. Changed message to user-friendly: "This branch is currently closed. To place orders after hours, ask an administrator to enable extended order access from the admin settings." | Frontend can distinguish branch-closed errors from generic 422s and show appropriate UI |
+| File                                                     | Change                                                                                                                                                                                                                                                                              | Reason                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `app/Events/BranchAccessUpdatedEvent.php`                | **NEW** — Created `BranchAccessUpdatedEvent` implementing `ShouldBroadcast`. Broadcasts on `orders.branch.{branch_id}` private channel with broadcast name `.branch.access.updated`. Payload: `branch_id`, `extended_staff_access`, `extended_order_access`, `staff_access_allowed` | Real-time propagation of access changes to all staff clients listening on the branch channel |
+| `app/Http/Controllers/Api/BranchController.php`          | Added `use App\Events\BranchAccessUpdatedEvent` import. Both `toggleExtendedStaffAccess()` and `toggleExtendedOrderAccess()` now dispatch `BranchAccessUpdatedEvent::dispatch($branch->fresh())` after updating the branch                                                          | Triggers WebSocket broadcast when admin toggles access                                       |
+| `app/Http/Controllers/Api/CheckoutSessionController.php` | Updated branch-closed error response in `posStore()` to include `code: 'branch_closed'` field. Changed message to user-friendly: "This branch is currently closed. To place orders after hours, ask an administrator to enable extended order access from the admin settings."      | Frontend can distinguish branch-closed errors from generic 422s and show appropriate UI      |
 
 ### Decisions
 
@@ -362,10 +409,10 @@ Make branch extended access toggles propagate in real-time to all connected POS/
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|------|--------|--------|
-| `app/components/providers/BranchProvider.tsx` | Added WebSocket listener for `.branch.access.updated` on branch channel — invalidates `['branches']` query cache on event | Instant branch data refresh when admin toggles access |
-| `app/pos/terminal/page.tsx` | Added `branchClosedNotice` state and modal — detects `code === 'branch_closed'` from API response | POS shows a modal instead of a toast for branch-closed errors |
+| File (Frontend repo)                          | Change                                                                                                                    | Impact                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `app/components/providers/BranchProvider.tsx` | Added WebSocket listener for `.branch.access.updated` on branch channel — invalidates `['branches']` query cache on event | Instant branch data refresh when admin toggles access         |
+| `app/pos/terminal/page.tsx`                   | Added `branchClosedNotice` state and modal — detects `code === 'branch_closed'` from API response                         | POS shows a modal instead of a toast for branch-closed errors |
 
 ### Current State
 
