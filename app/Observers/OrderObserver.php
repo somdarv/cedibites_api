@@ -81,11 +81,19 @@ class OrderObserver
         }
 
         // Record status change in history
-        $order->statusHistory()->create([
-            'status' => $order->status,
-            'changed_by_type' => 'system',
-            'changed_at' => now(),
-        ]);
+        try {
+            $order->statusHistory()->create([
+                'status' => $order->status,
+                'changed_by_type' => 'system',
+                'changed_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('OrderObserver: statusHistory create failed', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         try {
             $customer = $order->customer?->user;
@@ -111,7 +119,10 @@ class OrderObserver
             $this->handleCancellationSideEffects($order);
         }
 
-        OrderBroadcastEvent::dispatch($order, 'updated');
+        // Dispatch broadcast after transaction commits (matches created() pattern)
+        \DB::afterCommit(function () use ($order) {
+            OrderBroadcastEvent::dispatch($order, 'updated');
+        });
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\OrderStatusHistory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CancelRequestController extends Controller
 {
@@ -45,12 +46,34 @@ class CancelRequestController extends Controller
                 ->log("Cancel requested for order {$order->order_number}");
         });
 
-        $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
+        try {
+            $order->load([
+                'customer.user',
+                'branch',
+                'items.menuItem.category',
+                'items.menuItemOption.media',
+                'payments',
+                'statusHistory.changedBy',
+                'assignedEmployee.user',
+                'cancelRequestedBy',
+            ]);
 
-        return response()->json([
-            'message' => 'Cancellation request submitted.',
-            'data' => new OrderResource($order),
-        ]);
+            return response()->json([
+                'message' => 'Cancellation request submitted.',
+                'data' => new OrderResource($order),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('CancelRequestController::requestCancel response failed', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Cancellation request submitted.',
+                'data' => ['id' => $order->id, 'order_number' => $order->order_number, 'status' => $order->status],
+            ]);
+        }
     }
 
     /**
@@ -78,7 +101,16 @@ class CancelRequestController extends Controller
                 ->log("Cancellation approved for order {$order->order_number}");
         });
 
-        $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
+        $order->load([
+            'customer.user',
+            'branch',
+            'items.menuItem.category',
+            'items.menuItemOption.media',
+            'payments',
+            'statusHistory.changedBy',
+            'assignedEmployee.user',
+            'cancelRequestedBy',
+        ]);
 
         return response()->json([
             'message' => 'Order cancellation approved.',
@@ -121,7 +153,16 @@ class CancelRequestController extends Controller
                 ->log("Cancellation rejected for order {$order->order_number}, reverted to {$revertTo}");
         });
 
-        $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
+        $order->load([
+            'customer.user',
+            'branch',
+            'items.menuItem.category',
+            'items.menuItemOption.media',
+            'payments',
+            'statusHistory.changedBy',
+            'assignedEmployee.user',
+            'cancelRequestedBy',
+        ]);
 
         return response()->json([
             'message' => 'Cancellation request rejected. Order reverted to previous status.',
@@ -159,7 +200,16 @@ class CancelRequestController extends Controller
                 ->log("Order {$order->order_number} directly cancelled by admin");
         });
 
-        $order->load(['customer.user', 'branch', 'items.menuItem', 'payments', 'statusHistory']);
+        $order->load([
+            'customer.user',
+            'branch',
+            'items.menuItem.category',
+            'items.menuItemOption.media',
+            'payments',
+            'statusHistory.changedBy',
+            'assignedEmployee.user',
+            'cancelRequestedBy',
+        ]);
 
         return response()->json([
             'message' => 'Order cancelled.',
