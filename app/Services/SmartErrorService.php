@@ -306,6 +306,11 @@ class SmartErrorService
                 'title' => 'External service connection failed',
                 'detail' => 'The system couldn\'t reach an external API (Hubtel, SMS gateway, etc.).',
             ],
+            str_contains($message, 'HubtelSmsService'), str_contains($message, 'Invalid phone number format') => [
+                'category' => 'integrations',
+                'title' => 'SMS notification failed',
+                'detail' => 'An SMS could not be sent — the customer\'s phone number may be in an invalid format.',
+            ],
             str_contains($message, 'Hubtel'), str_contains($message, 'hubtel') => [
                 'category' => 'payments',
                 'title' => 'Hubtel payment gateway error',

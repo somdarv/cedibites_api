@@ -35,8 +35,17 @@ class SmsChannel
         $message = $notification->toSms($notifiable);
 
         try {
-            // Strip the + prefix for Hubtel API
+            // Normalize to Hubtel format: 233XXXXXXXXX (12 digits, no +)
             $hubtelPhone = ltrim($phone, '+');
+
+            if (str_starts_with($hubtelPhone, '0') && strlen($hubtelPhone) === 10) {
+                // Local format: 0241234567 → 233241234567
+                $hubtelPhone = '233' . substr($hubtelPhone, 1);
+            } elseif (! str_starts_with($hubtelPhone, '233') && strlen($hubtelPhone) === 9) {
+                // Bare 9-digit format: 241234567 → 233241234567
+                $hubtelPhone = '233' . $hubtelPhone;
+            }
+
             $result = $this->smsService->sendSingle($hubtelPhone, $message);
 
             Log::info('SMS notification sent', [
