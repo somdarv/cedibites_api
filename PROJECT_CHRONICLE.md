@@ -104,6 +104,52 @@ Items still needing attention.
 
 ---
 
+## [2026-04-28] Session: SMS Phone Normalization + SmartError Mislabeling Fix
+
+### Intent
+
+Fix two related production issues surfaced by an admin error notification labeled "Hubtel payment gateway error" against an SMS failure for customer #519 (phone `536742248`):
+
+1. SMS notifications were failing because phone numbers stored without a country code (`536742248`) couldn't pass `HubtelSmsService::validatePhoneNumber()` (which requires `233XXXXXXXXX`).
+2. The `SmartErrorService` was mislabeling **all** errors containing the word "Hubtel" as payment gateway errors — including SMS failures from `HubtelSmsService`.
+
+### Changes
+
+- **`app/Channels/SmsChannel.php`** — Added phone normalization before calling `HubtelSmsService::sendSingle()`:
+  - Strips `+` prefix (existing behavior).
+  - `0241234567` (10-digit local) → `233241234567`.
+  - `241234567` (bare 9-digit) → `233241234567`.
+  - Already-correct `233...` numbers pass through unchanged.
+- **`app/Services/SmartErrorService.php`** — Added a more specific matcher for `HubtelSmsService` / `Invalid phone number format` errors that now categorize as `integrations` with title "SMS notification failed", placed **before** the generic Hubtel matcher.
+
+### Decisions
+
+- Phone normalization lives in `SmsChannel` (not the model) so other consumers of `User.phone` aren't affected.
+- The change is strictly additive — any phone format that succeeded before still succeeds; nothing that worked before can break.
+- Order placement is unaffected: all `Order*Notification` classes implement `ShouldQueue`, so SMS sending happens in a queue worker fully decoupled from the HTTP request.
+
+### Files Modified
+
+- `app/Channels/SmsChannel.php`
+- `app/Services/SmartErrorService.php`
+
+### Operational Note (not a code change)
+
+Created a production `tech_admin` user via tinker on the server (`/var/www/production/laravel/cedibites_api`). The `EmployeeSeeder` only creates the `admin` role user, so additional tech admins must be provisioned manually. Procedure used:
+
+1. `User::create([...])` with `name`, `email`, `phone`, `password`.
+2. `$user->syncRoles([Role::TechAdmin->value])`.
+3. `Employee::create([...])` with `employee_no`, `status: Active`, `hire_date`.
+4. `$emp->branches()->sync(Branch::pluck('id'))`.
+5. Set `platform_passcode` (6-digit PIN, hashed) for Platform Admin vault access.
+
+### Current State
+
+- Customer phones in any common Ghana format (`+233...`, `233...`, `0...`, bare 9-digit) now produce successful SMS.
+- Admin error feed correctly distinguishes SMS failures from payment failures.
+
+---
+
 ## [2026-04-14] Session: Cancel Request Double-Fire Bug Fix
 
 ### Intent
