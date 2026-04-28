@@ -116,10 +116,10 @@ Fix two related production issues surfaced by an admin error notification labele
 ### Changes
 
 - **`app/Channels/SmsChannel.php`** — Added phone normalization before calling `HubtelSmsService::sendSingle()`:
-  - Strips `+` prefix (existing behavior).
-  - `0241234567` (10-digit local) → `233241234567`.
-  - `241234567` (bare 9-digit) → `233241234567`.
-  - Already-correct `233...` numbers pass through unchanged.
+    - Strips `+` prefix (existing behavior).
+    - `0241234567` (10-digit local) → `233241234567`.
+    - `241234567` (bare 9-digit) → `233241234567`.
+    - Already-correct `233...` numbers pass through unchanged.
 - **`app/Services/SmartErrorService.php`** — Added a more specific matcher for `HubtelSmsService` / `Invalid phone number format` errors that now categorize as `integrations` with title "SMS notification failed", placed **before** the generic Hubtel matcher.
 
 ### Decisions
@@ -165,17 +165,17 @@ Two compounding bugs:
 
 ### Changes Made
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                                                   | Change                                                       | Reason                                                                                                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app/Http/Controllers/Api/CancelRequestController.php` | Wrapped `requestCancel()` method body in `DB::transaction()` | If activity log or eager loading fails after status update, the status change rolls back — prevents partial commits leaving order in inconsistent state |
-| `app/Http/Controllers/Api/CancelRequestController.php` | Wrapped `rejectCancel()` method body in `DB::transaction()` | Same atomicity fix — status change + activity log + eager loading must all succeed or all roll back |
+| `app/Http/Controllers/Api/CancelRequestController.php` | Wrapped `rejectCancel()` method body in `DB::transaction()`  | Same atomicity fix — status change + activity log + eager loading must all succeed or all roll back                                                     |
 
 ### Decisions
 
 - **Decision**: Wrap `requestCancel()` and `rejectCancel()` in `DB::transaction()` — `approveCancel()` was already transactional
-  - **Rationale**: All state-changing methods that update order status AND perform follow-up operations (activity log, eager loading) must be atomic. A partial commit (status saved, but activity log error → 500) is the root cause of the double-fire bug on the frontend.
+    - **Rationale**: All state-changing methods that update order status AND perform follow-up operations (activity log, eager loading) must be atomic. A partial commit (status saved, but activity log error → 500) is the root cause of the double-fire bug on the frontend.
 - **Decision**: Did NOT change `approveCancel()`
-  - **Rationale**: Already wrapped in a transaction — no fix needed.
+    - **Rationale**: Already wrapped in a transaction — no fix needed.
 
 ### Current State
 
@@ -186,8 +186,8 @@ Two compounding bugs:
 
 ### Cross-Repo Impact
 
-| File (Frontend repo) | Change | Impact |
-|---------------------|--------|--------|
+| File (Frontend repo)                         | Change                                              | Impact                                                                                                               |
+| -------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `app/components/providers/QueryProvider.tsx` | Mutations changed from `retry: 1` to `retry: false` | Prevents TanStack Query from auto-retrying failed mutations — the frontend amplification that caused the double-fire |
 
 ### Pending / Follow-up
