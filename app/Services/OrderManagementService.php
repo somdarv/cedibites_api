@@ -229,6 +229,8 @@ class OrderManagementService
      *     refunded_amount: float,
      *     no_charge_count: int,
      *     no_charge_amount: float,
+     *     issues_count: int,
+     *     issues_amount: float,
      *     total_count: int
      * }
      */
@@ -253,6 +255,18 @@ class OrderManagementService
         $noChargeQuery = (clone $base)->where('status', '!=', 'cancelled')
             ->whereHas('payments', $hasPayment('no_charge'));
 
+        // Distinct "issue" orders: each order counted once even if it qualifies
+        // under multiple buckets (e.g. cancelled AND refunded). Amount is the
+        // order's total_amount summed once per order.
+        $issuesQuery = (clone $base)->where(function ($q) use ($hasPayment): void {
+            $q->where('status', 'cancelled')
+                ->orWhereHas('payments', $hasPayment('refunded'))
+                ->orWhere(function ($q2) use ($hasPayment): void {
+                    $q2->whereHas('payments', $hasPayment('failed'))
+                        ->whereDoesntHave('payments', $hasPayment('completed'));
+                });
+        });
+
         return [
             'valid_count' => (int) (clone $validQuery)->count(),
             'valid_revenue' => round((float) (clone $validQuery)->sum('total_amount'), 2),
@@ -264,6 +278,8 @@ class OrderManagementService
             'refunded_amount' => round((float) (clone $refundedQuery)->sum('total_amount'), 2),
             'no_charge_count' => (int) (clone $noChargeQuery)->count(),
             'no_charge_amount' => round((float) (clone $noChargeQuery)->sum('total_amount'), 2),
+            'issues_count' => (int) (clone $issuesQuery)->count(),
+            'issues_amount' => round((float) (clone $issuesQuery)->sum('total_amount'), 2),
             'total_count' => (int) (clone $base)->count(),
         ];
     }
