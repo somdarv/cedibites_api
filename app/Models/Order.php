@@ -81,6 +81,7 @@ class Order extends Model
         'cancel_requested_at',
         'recorded_at',
         'momo_number',
+        'internal_notes',
     ];
 
     protected function casts(): array
@@ -99,6 +100,7 @@ class Order extends Model
             'cancelled_at' => 'datetime',
             'cancel_requested_at' => 'datetime',
             'recorded_at' => 'datetime',
+            'internal_notes' => 'array',
         ];
     }
 

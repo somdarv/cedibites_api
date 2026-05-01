@@ -160,6 +160,7 @@ Route::prefix('admin')->group(function () {
         Route::post('orders/{order}/approve-cancel', [CancelRequestController::class, 'approveCancel']);
         Route::post('orders/{order}/reject-cancel', [CancelRequestController::class, 'rejectCancel']);
         Route::post('orders/{order}/cancel', [CancelRequestController::class, 'directCancel']);
+        Route::post('orders/{order}/notes', [\App\Http\Controllers\Api\OrderNoteController::class, 'store']);
     });
 
     // System settings (admin only)

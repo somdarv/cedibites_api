@@ -113,6 +113,7 @@ class OrderResource extends JsonResource
             ] : null,
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             'cancelled_reason' => $this->cancelled_reason,
+            'internal_notes' => $this->internal_notes ?? [],
             'recorded_at' => $this->recorded_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
