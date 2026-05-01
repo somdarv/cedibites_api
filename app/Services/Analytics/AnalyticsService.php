@@ -506,7 +506,11 @@ class AnalyticsService
         $paidQuery = $this->queryBuilder->payments($filters, 'completed');
 
         $methods = (clone $paidQuery)
-            ->select('payments.payment_method', DB::raw('COUNT(*) as count'))
+            ->select(
+                'payments.payment_method',
+                DB::raw('COUNT(*) as count'),
+                DB::raw('SUM(payments.amount) as amount'),
+            )
             ->groupBy('payments.payment_method')
             ->get();
 
@@ -527,6 +531,8 @@ class AnalyticsService
             return [
                 'label' => $label,
                 'pct' => $totalPayments > 0 ? round(($method->count / $totalPayments) * 100) : 0,
+                'amount' => round((float) ($method->amount ?? 0), 2),
+                'count' => (int) $method->count,
             ];
         })->sortByDesc('pct')->values()->toArray();
 
@@ -534,6 +540,8 @@ class AnalyticsService
             $result[] = [
                 'label' => 'No Charge',
                 'pct' => $totalPayments > 0 ? round(($noChargeCount / $totalPayments) * 100) : 0,
+                'amount' => 0.0,
+                'count' => $noChargeCount,
             ];
         }
 
