@@ -947,7 +947,7 @@ class AnalyticsService
     {
         $now = now();
         $dateFrom = match ($period) {
-            'week' => $now->startOfWeek()->toDateString(),
+            'week' => $now->copy()->startOfWeek(Carbon::SUNDAY)->toDateString(),
             'month' => $now->startOfMonth()->toDateString(),
             default => $now->startOfDay()->toDateString(),
         };
