@@ -126,6 +126,7 @@ Route::prefix('admin')->group(function () {
 
     Route::middleware('permission:view_activity_log')->group(function () {
         Route::get('activity-logs', [ActivityLogController::class, 'index']);
+        Route::get('activity-logs/causers', [ActivityLogController::class, 'causers']);
     });
 
     Route::middleware('permission:view_orders')->group(function () {

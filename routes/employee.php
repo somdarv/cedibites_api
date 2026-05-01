@@ -49,6 +49,7 @@ Route::middleware('password.reset')->group(function () {
     Route::prefix('employee')->middleware('permission:view_orders')->group(function () {
         Route::get('orders', [EmployeeOrderController::class, 'index']);
         Route::get('orders/stats', [EmployeeOrderController::class, 'stats']);
+        Route::get('orders/summary', [EmployeeOrderController::class, 'summary']);
         Route::get('orders/pending', [EmployeeOrderController::class, 'pending']);
         Route::patch('orders/{order}/status', [EmployeeOrderController::class, 'updateStatus'])
             ->middleware('permission:update_orders');

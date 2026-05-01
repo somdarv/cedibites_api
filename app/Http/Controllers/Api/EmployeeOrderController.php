@@ -47,6 +47,22 @@ class EmployeeOrderController extends Controller
     }
 
     /**
+     * Lightweight period summary for the current orders filter scope
+     * (valid / cancelled / failed / refunded / no-charge counts + amounts).
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        $filters = $request->only([
+            'branch_id', 'branch_name', 'staff_id', 'status', 'order_type', 'order_source',
+            'contact_phone', 'date_from', 'date_to', 'search', 'payment_status', 'payment_method',
+        ]);
+
+        $summary = $this->orderManagementService->getBranchPeriodSummary($request->user(), $filters);
+
+        return response()->success($summary, 'Order summary retrieved successfully.');
+    }
+
+    /**
      * Get pending orders for quick view.
      */
     public function pending(Request $request): JsonResponse

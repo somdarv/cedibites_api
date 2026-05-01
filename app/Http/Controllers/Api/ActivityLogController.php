@@ -84,4 +84,38 @@ class ActivityLogController extends Controller
 
         return ActivityLogResource::collection($activities)->response();
     }
+
+    /**
+     * Distinct causers (users) that appear in the activity log.
+     * Used to power the "filter by user" dropdown on the admin audit page.
+     * Optionally narrowed by date range so the list stays relevant.
+     */
+    public function causers(Request $request): JsonResponse
+    {
+        $query = ActivityLog::query()
+            ->whereNotNull('causer_id')
+            ->where('causer_type', User::class);
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        $causerIds = $query->distinct()->pluck('causer_id');
+
+        $users = User::whereIn('id', $causerIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        return response()->json([
+            'data' => $users->map(fn ($u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+            ])->values(),
+        ]);
+    }
 }

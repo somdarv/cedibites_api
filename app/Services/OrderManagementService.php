@@ -210,4 +210,61 @@ class OrderManagementService
             'completed_today' => 0,
         ];
     }
+
+    /**
+     * Lightweight period summary for the current branch-orders filter scope.
+     *
+     * Uses the same filter pipeline as getBranchOrders() so the summary always
+     * matches what the user is viewing in the table.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{
+     *     valid_count: int,
+     *     valid_revenue: float,
+     *     cancelled_count: int,
+     *     cancelled_amount: float,
+     *     failed_count: int,
+     *     failed_amount: float,
+     *     refunded_count: int,
+     *     refunded_amount: float,
+     *     no_charge_count: int,
+     *     no_charge_amount: float,
+     *     total_count: int
+     * }
+     */
+    public function getBranchPeriodSummary(User $user, array $filters = []): array
+    {
+        // Reuse the existing scoped query (handles role/branch access + filters).
+        $base = $this->getBranchOrders($user, $filters);
+
+        // Strip the eager loads + ordering — irrelevant for aggregations and they slow it down.
+        $base->getQuery()->orders = null;
+        $base->setEagerLoads([]);
+
+        $hasPayment = fn (string $status) => fn ($q) => $q->where('payment_status', $status);
+
+        $validQuery = (clone $base)->where('status', '!=', 'cancelled')
+            ->whereHas('payments', $hasPayment('completed'));
+        $cancelledQuery = (clone $base)->where('status', 'cancelled');
+        $failedQuery = (clone $base)->where('status', '!=', 'cancelled')
+            ->whereHas('payments', $hasPayment('failed'))
+            ->whereDoesntHave('payments', $hasPayment('completed'));
+        $refundedQuery = (clone $base)->whereHas('payments', $hasPayment('refunded'));
+        $noChargeQuery = (clone $base)->where('status', '!=', 'cancelled')
+            ->whereHas('payments', $hasPayment('no_charge'));
+
+        return [
+            'valid_count' => (int) (clone $validQuery)->count(),
+            'valid_revenue' => round((float) (clone $validQuery)->sum('total_amount'), 2),
+            'cancelled_count' => (int) (clone $cancelledQuery)->count(),
+            'cancelled_amount' => round((float) (clone $cancelledQuery)->sum('total_amount'), 2),
+            'failed_count' => (int) (clone $failedQuery)->count(),
+            'failed_amount' => round((float) (clone $failedQuery)->sum('total_amount'), 2),
+            'refunded_count' => (int) (clone $refundedQuery)->count(),
+            'refunded_amount' => round((float) (clone $refundedQuery)->sum('total_amount'), 2),
+            'no_charge_count' => (int) (clone $noChargeQuery)->count(),
+            'no_charge_amount' => round((float) (clone $noChargeQuery)->sum('total_amount'), 2),
+            'total_count' => (int) (clone $base)->count(),
+        ];
+    }
 }

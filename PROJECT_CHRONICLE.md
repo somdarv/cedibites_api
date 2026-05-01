@@ -104,6 +104,44 @@ Items still needing attention.
 
 ---
 
+## [2026-05-01] Session: Order Period Summary Endpoint + Audit Log Causers Endpoint
+
+### Intent
+Two small additive endpoints to power new admin/staff observability features:
+1. A lightweight per-scope order quality summary (valid / cancelled / failed / refunded / no-charge counts and amounts) that mirrors the orders index filter pipeline so the numbers always match the visible table.
+2. A distinct-causers list for the admin audit log "filter by user" dropdown, narrowed by date range.
+
+### Changes Made
+| File | Change | Reason |
+|------|--------|--------|
+| `app/Services/OrderManagementService.php` | Added `getBranchPeriodSummary(User, array)` method | Reuses the existing `getBranchOrders()` filter pipeline (role/branch scoping + all filters) then runs five aggregate clones to produce per-status counts + amounts |
+| `app/Http/Controllers/Api/EmployeeOrderController.php` | Added `summary(Request)` action | Thin orchestration — pulls allowed filter keys from request, delegates to service |
+| `routes/employee.php` | Added `GET v1/employee/orders/summary` (gated by `permission:view_orders`) | Same auth gate as `index` |
+| `app/Http/Controllers/Api/ActivityLogController.php` | Added `causers(Request)` action | Returns distinct `causer_id` values from `activity_log` (User class only) within optional date range, joined with users for `{id, name, email}` |
+| `routes/admin.php` | Added `GET v1/admin/activity-logs/causers` (gated by `permission:view_activity_log`) | Same gate as the audit log itself |
+
+### Decisions
+- **Decision**: Use five separate `whereHas` aggregate clones instead of one `LEFT JOIN payments` with `CASE` sums.
+  - **Rationale**: An order can have multiple `payments` rows (retries, partial refunds). A flat join would double-count `total_amount`. Per-status `whereHas` clones keep counts/sums one-per-order accurate.
+- **Decision**: Mirror `AnalyticsQueryBuilder` definitions exactly — "valid" = `status != cancelled` AND `whereHas('payments', payment_status = completed)`.
+  - **Rationale**: Numbers shown alongside an orders table must match the dashboards or trust collapses. Same source of truth.
+- **Decision**: Strip the eager loads + ordering off the cloned base before aggregating.
+  - **Rationale**: Eager loads + `ORDER BY` are expensive and irrelevant for `COUNT`/`SUM`.
+- **Decision**: Do NOT extend the existing `stats` endpoint — added a new `summary` endpoint instead.
+  - **Rationale**: `stats` is "today snapshot" semantics used by the staff home dashboard. Conflating it with filter-scoped summary would have changed behaviour for existing callers. Additive, no breakage.
+- **Decision**: Audit log causers narrowed by date range (optional).
+  - **Rationale**: Keeps the dropdown short and contextually relevant — only users who actually acted in the visible window appear.
+
+### Current State
+- Two new GET endpoints, both gated by existing permissions, both additive (no existing endpoints modified).
+- `vendor/bin/pint --dirty` passes.
+- `php artisan route:list --path=employee/orders` confirms `summary` route is registered.
+
+### Pending / Follow-up
+- Optional: cache the summary briefly per-scope hash to reduce load if dashboards become refresh-heavy.
+
+---
+
 ## [2026-04-28] Session: SMS Phone Normalization + SmartError Mislabeling Fix
 
 ### Intent
