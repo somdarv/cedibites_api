@@ -15,13 +15,13 @@ class Customer extends Model
 {
     use HasFactory, LogsActivity, SoftDeletes;
 
-    protected static array $recordEvents = ['created'];
-
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->useLogName('auth')
-            ->logOnly(['user_id', 'is_guest']);
+            ->logOnly(['user_id', 'is_guest', 'status'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 
     protected $fillable = [

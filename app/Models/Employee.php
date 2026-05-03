@@ -20,7 +20,21 @@ class Employee extends Model
     {
         return LogOptions::defaults()
             ->useLogName('admin')
-            ->logOnly(['user_id', 'status'])
+            ->logOnly([
+                'user_id',
+                'employee_no',
+                'status',
+                'hire_date',
+                'performance_rating',
+                'ssnit_number',
+                'ghana_card_id',
+                'tin_number',
+                'date_of_birth',
+                'nationality',
+                'emergency_contact_name',
+                'emergency_contact_phone',
+                'emergency_contact_relationship',
+            ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }

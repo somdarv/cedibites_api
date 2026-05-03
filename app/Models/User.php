@@ -20,13 +20,20 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use CausesActivity, HasApiTokens, HasFactory, HasPushSubscriptions, HasRoles, LogsActivity, Notifiable, SoftDeletes;
 
-    protected static array $recordEvents = ['created'];
-
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->useLogName('auth')
-            ->logOnly(['name', 'phone', 'email']);
+            ->logOnly([
+                'name',
+                'email',
+                'phone',
+                'must_reset_password',
+                'password_reset_required_at',
+                'platform_passcode',
+            ])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 
     /**
