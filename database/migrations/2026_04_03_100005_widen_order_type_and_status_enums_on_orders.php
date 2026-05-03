@@ -7,6 +7,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // 1. Widen order_type to include dine_in and takeaway
         $this->replaceEnumConstraint(
             'orders',
@@ -24,6 +28,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         $this->replaceEnumConstraint(
             'orders',
             'order_type',

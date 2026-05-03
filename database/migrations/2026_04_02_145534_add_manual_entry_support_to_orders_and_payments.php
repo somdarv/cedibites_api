@@ -9,21 +9,27 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $isPgsql = DB::connection()->getDriverName() === 'pgsql';
+
         // 1. Widen order_source enum to include 'manual_entry'
         //    Laravel enums on PG are varchar + check constraint.
         //    Drop existing constraint and recreate with new value.
-        $this->replaceEnumConstraint(
-            'orders',
-            'order_source',
-            ['online', 'phone', 'whatsapp', 'instagram', 'facebook', 'pos', 'manual_entry']
-        );
+        //    On non-pgsql (e.g. SQLite test DB) the column is plain TEXT with
+        //    no check constraint to alter, so we skip the SQL.
+        if ($isPgsql) {
+            $this->replaceEnumConstraint(
+                'orders',
+                'order_source',
+                ['online', 'phone', 'whatsapp', 'instagram', 'facebook', 'pos', 'manual_entry']
+            );
 
-        // 2. Widen payment_method enum to include 'manual_momo'
-        $this->replaceEnumConstraint(
-            'payments',
-            'payment_method',
-            ['mobile_money', 'card', 'wallet', 'ghqr', 'cash', 'no_charge', 'manual_momo']
-        );
+            // 2. Widen payment_method enum to include 'manual_momo'
+            $this->replaceEnumConstraint(
+                'payments',
+                'payment_method',
+                ['mobile_money', 'card', 'wallet', 'ghqr', 'cash', 'no_charge', 'manual_momo']
+            );
+        }
 
         // 3. Add recorded_at — the actual date/time the paper order occurred
         Schema::table('orders', function (Blueprint $table) {
@@ -36,6 +42,10 @@ return new class extends Migration
         Schema::table('orders', function (Blueprint $table) {
             $table->dropColumn('recorded_at');
         });
+
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
 
         $this->replaceEnumConstraint(
             'orders',

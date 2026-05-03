@@ -16,6 +16,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         $table = 'order_status_history';
         $column = 'status';
 

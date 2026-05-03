@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +17,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Orders table - 3 enum columns
         $this->ensureEnumConstraint('orders', 'order_source', [
             'online', 'phone', 'whatsapp', 'instagram', 'facebook', 'pos', 'manual_entry',
